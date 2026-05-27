@@ -1,0 +1,15 @@
+[Unit]
+Description=Engineered Psychology Client Portal
+After=network.target
+
+[Service]
+User=ec2-user
+WorkingDirectory=/home/ec2-user/apps/portal-engineeredpsychology
+EnvironmentFile=/home/ec2-user/apps/portal-engineeredpsychology/.env
+ExecStart=/home/ec2-user/apps/portal-engineeredpsychology/.venv/bin/gunicorn --bind 127.0.0.1:3020 app:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+

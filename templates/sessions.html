@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Sessions{% endblock %}
+
+{% block content %}
+  <section class="page-section">
+    <p class="eyebrow">Session timeline</p>
+    <h1>Session notes and skills</h1>
+    <p>Review the main themes, skills, and next steps from each session.</p>
+  </section>
+
+  <section class="session-list" aria-label="Session timeline">
+    {% for session in sessions %}
+      <article class="panel session-card">
+        <div class="session-meta">
+          <span>{{ session.session_date }}</span>
+          <h2>{{ session.title }}</h2>
+        </div>
+        {% if session.summary %}
+          <p>{{ session.summary }}</p>
+        {% endif %}
+        {% if session.key_skills %}
+          <div>
+            <strong>Skills built</strong>
+            <div class="chip-row">
+              {% for skill in session.key_skills.splitlines() %}
+                {% if skill.strip() %}
+                  <span class="chip">{{ skill.strip() }}</span>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+        {% if session.next_steps %}
+          <div class="next-steps">
+            <strong>Between-session focus</strong>
+            <p>{{ session.next_steps }}</p>
+          </div>
+        {% endif %}
+      </article>
+    {% else %}
+      <article class="panel">
+        <p class="empty-state">No session notes have been shared yet.</p>
+      </article>
+    {% endfor %}
+  </section>
+{% endblock %}
+

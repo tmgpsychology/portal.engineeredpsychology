@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Skills{% endblock %}
+
+{% block content %}
+  <section class="page-section split-section">
+    <div>
+      <p class="eyebrow">Session skills</p>
+      <h1>Skills and interventions</h1>
+      <p>Keep a practical record of strategies discussed in session and what each one is for.</p>
+    </div>
+
+    <form class="entry-form" method="post" action="{{ url_for('skills') }}">
+      <label>
+        <span>Skill or intervention</span>
+        <input name="title" placeholder="e.g. Grounding practice" required>
+      </label>
+      <div class="form-row">
+        <label>
+          <span>Category</span>
+          <input name="category" placeholder="e.g. Regulation">
+        </label>
+        <label>
+          <span>Date discussed</span>
+          <input type="date" name="practiced_at">
+        </label>
+      </div>
+      <label>
+        <span>Notes</span>
+        <textarea name="notes" rows="5" placeholder="When to use it, how it works, or what to practise before next session."></textarea>
+      </label>
+      <button class="primary-button" type="submit">Save skill</button>
+    </form>
+  </section>
+
+  <section class="skill-list" aria-label="Saved skills and interventions">
+    {% for skill in skills %}
+      <article class="panel skill-card">
+        <div>
+          <p class="eyebrow">{{ skill.category }}</p>
+          <h2>{{ skill.title }}</h2>
+          <small>{{ skill.practiced_at }}</small>
+        </div>
+        {% if skill.notes %}
+          <p>{{ skill.notes }}</p>
+        {% endif %}
+      </article>
+    {% else %}
+      <article class="panel">
+        <p class="empty-state">No skills or interventions have been added yet.</p>
+      </article>
+    {% endfor %}
+  </section>
+{% endblock %}
+

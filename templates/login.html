@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}Sign In{% endblock %}
+
+{% block content %}
+  <section class="login-shell">
+    <div class="login-copy">
+      <p class="eyebrow">Secure client access</p>
+      <h1>Sign in to your portal</h1>
+      <p>Access messages, documents, and shared resources from Engineered Psychology.</p>
+    </div>
+
+    <form class="auth-panel" method="post" action="{{ url_for('login') }}">
+      <label>
+        <span>Email</span>
+        <input type="email" name="email" value="{{ email or '' }}" autocomplete="email" required>
+      </label>
+      <label>
+        <span>Password</span>
+        <input type="password" name="password" autocomplete="current-password" required>
+      </label>
+      <button class="primary-button" type="submit">Sign in</button>
+    </form>
+  </section>
+{% endblock %}
+

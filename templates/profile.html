@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}Profile{% endblock %}
+
+{% block content %}
+  <section class="page-section">
+    <p class="eyebrow">Client profile</p>
+    <h1>{{ g.client.full_name }}</h1>
+    <div class="profile-table">
+      <div>
+        <span>Email</span>
+        <strong>{{ g.client.email }}</strong>
+      </div>
+      <div>
+        <span>Preferred name</span>
+        <strong>{{ g.client.preferred_name or "Not set" }}</strong>
+      </div>
+      <div>
+        <span>Phone</span>
+        <strong>{{ g.client.phone or "Not set" }}</strong>
+      </div>
+    </div>
+  </section>
+{% endblock %}
+

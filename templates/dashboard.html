@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+  <section class="dashboard-hero">
+    <div>
+      <p class="eyebrow">Welcome back</p>
+      <h1>{{ g.client.preferred_name or g.client.full_name }}</h1>
+      <p>Your messages, shared documents, and account activity are collected here.</p>
+    </div>
+  </section>
+
+  <section class="dashboard-grid" aria-label="Portal dashboard">
+    <article class="panel span-2">
+      <div class="panel-heading">
+        <h2>Messages</h2>
+        <span>{{ messages|length }}</span>
+      </div>
+      <div class="item-list">
+        {% for message in messages %}
+          <div class="list-item">
+            <div>
+              <strong>{{ message.subject }}</strong>
+              <small>{{ message.sender_label }} · {{ message.created_at }}</small>
+            </div>
+            <p>{{ message.body }}</p>
+          </div>
+        {% else %}
+          <p class="empty-state">No messages yet.</p>
+        {% endfor %}
+      </div>
+    </article>
+
+    <article class="panel">
+      <div class="panel-heading">
+        <h2>Documents</h2>
+        <span>{{ documents|length }}</span>
+      </div>
+      <div class="item-list">
+        {% for document in documents %}
+          <div class="list-item compact">
+            <strong>{{ document.title }}</strong>
+            <small>{{ document.status }} · {{ document.uploaded_at }}</small>
+            <p>{{ document.description }}</p>
+          </div>
+        {% else %}
+          <p class="empty-state">No documents available.</p>
+        {% endfor %}
+      </div>
+    </article>
+
+    <article class="panel">
+      <div class="panel-heading">
+        <h2>Skills</h2>
+        <a class="panel-link" href="{{ url_for('skills') }}">Add</a>
+      </div>
+      <div class="item-list">
+        {% for skill in skills %}
+          <div class="list-item compact">
+            <strong>{{ skill.title }}</strong>
+            <small>{{ skill.category }} · {{ skill.practiced_at }}</small>
+          </div>
+        {% else %}
+          <p class="empty-state">No skills listed yet.</p>
+        {% endfor %}
+      </div>
+    </article>
+
+    <article class="panel span-2">
+      <div class="panel-heading">
+        <h2>Recent sessions</h2>
+        <a class="panel-link" href="{{ url_for('sessions') }}">View</a>
+      </div>
+      <div class="item-list">
+        {% for session in sessions %}
+          <div class="list-item compact">
+            <strong>{{ session.title }}</strong>
+            <small>{{ session.session_date }}</small>
+            {% if session.key_skills %}
+              <div class="chip-row">
+                {% for skill in session.key_skills.splitlines() %}
+                  {% if skill.strip() %}
+                    <span class="chip">{{ skill.strip() }}</span>
+                  {% endif %}
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+        {% else %}
+          <p class="empty-state">No sessions added yet.</p>
+        {% endfor %}
+      </div>
+    </article>
+
+    <article class="panel">
+      <div class="panel-heading">
+        <h2>Activity</h2>
+      </div>
+      <div class="timeline">
+        {% for event in activity %}
+          <div class="timeline-row">
+            <span></span>
+            <div>
+              <strong>{{ event.event_type.replace("_", " ").title() }}</strong>
+              <small>{{ event.created_at }}</small>
+              <p>{{ event.detail }}</p>
+            </div>
+          </div>
+        {% else %}
+          <p class="empty-state">No activity recorded.</p>
+        {% endfor %}
+      </div>
+    </article>
+  </section>
+{% endblock %}
