@@ -8,6 +8,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from flask import (
+    abort,
     Flask,
     flash,
     g,
@@ -31,13 +32,20 @@ def create_app() -> Flask:
     app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
 
     @app.before_request
-    def load_logged_in_client() -> None:
+    def load_logged_in_user() -> None:
         client_id = session.get("client_id")
+        admin_id = session.get("admin_id")
         g.client = None
+        g.admin = None
         if client_id is not None:
             g.client = query_one(
                 "select id, email, full_name, preferred_name, phone from clients where id = ?",
                 (client_id,),
+            )
+        if admin_id is not None:
+            g.admin = query_one(
+                "select id, email, full_name from admins where id = ?",
+                (admin_id,),
             )
 
     @app.teardown_appcontext
@@ -48,6 +56,8 @@ def create_app() -> Flask:
 
     @app.route("/")
     def index():
+        if g.admin:
+            return redirect(url_for("admin_clients"))
         if g.client:
             return redirect(url_for("dashboard"))
         return redirect(url_for("login"))
@@ -114,6 +124,133 @@ def create_app() -> Flask:
                         return redirect(url_for("dashboard"))
 
         return render_template("create_account.html")
+
+    @app.route("/admin/login", methods=["GET", "POST"])
+    def admin_login():
+        if request.method == "POST":
+            email = request.form.get("email", "").strip().lower()
+            password = request.form.get("password", "")
+            admin = query_one("select * from admins where email = ?", (email,))
+
+            if admin is None or not check_password_hash(admin["password_hash"], password):
+                flash("Check your admin email and password, then try again.", "error")
+                return render_template("admin_login.html", email=email), 401
+
+            session.clear()
+            session.permanent = request.form.get("remember_device") == "on"
+            session["admin_id"] = admin["id"]
+            return redirect(url_for("admin_clients"))
+
+        return render_template("admin_login.html")
+
+    @app.route("/admin/logout", methods=["POST"])
+    @admin_required
+    def admin_logout():
+        session.clear()
+        return redirect(url_for("admin_login"))
+
+    @app.route("/admin")
+    @admin_required
+    def admin_clients():
+        clients = query_all(
+            """
+            select
+                c.id,
+                c.full_name,
+                c.preferred_name,
+                c.email,
+                c.phone,
+                c.created_at,
+                count(distinct ts.id) as session_count,
+                count(distinct cs.id) as skill_count
+            from clients c
+            left join therapy_sessions ts on ts.client_id = c.id
+            left join client_skills cs on cs.client_id = c.id
+            group by c.id
+            order by c.full_name
+            """
+        )
+        return render_template("admin_clients.html", clients=clients)
+
+    @app.route("/admin/clients/<int:client_id>")
+    @admin_required
+    def admin_client_detail(client_id: int):
+        client = get_client_or_404(client_id)
+        sessions = query_all(
+            """
+            select id, session_date, title, summary, key_skills, next_steps, created_at
+            from therapy_sessions
+            where client_id = ?
+            order by session_date desc, created_at desc
+            """,
+            (client_id,),
+        )
+        skills = query_all(
+            """
+            select id, title, category, notes, practiced_at, created_at
+            from client_skills
+            where client_id = ?
+            order by practiced_at desc, created_at desc
+            """,
+            (client_id,),
+        )
+        activity = query_all(
+            """
+            select event_type, detail, created_at
+            from audit_events
+            where client_id = ?
+            order by created_at desc
+            limit 12
+            """,
+            (client_id,),
+        )
+        return render_template(
+            "admin_client_detail.html",
+            client=client,
+            sessions=sessions,
+            skills=skills,
+            activity=activity,
+        )
+
+    @app.route("/admin/clients/<int:client_id>/sessions", methods=["POST"])
+    @admin_required
+    def admin_add_session(client_id: int):
+        client = get_client_or_404(client_id)
+        session_date = request.form.get("session_date", "").strip()
+        title = request.form.get("title", "").strip()
+        summary = request.form.get("summary", "").strip()
+        key_skills = request.form.get("key_skills", "").strip()
+        next_steps = request.form.get("next_steps", "").strip()
+
+        if not title:
+            flash("Add a session title before saving.", "error")
+        else:
+            saved_date = session_date or datetime.now().date().isoformat()
+            add_session_for_client(client["id"], saved_date, title, summary, key_skills, next_steps)
+            flash("Session saved for the client portal.", "success")
+        return redirect(url_for("admin_client_detail", client_id=client_id))
+
+    @app.route("/admin/clients/<int:client_id>/skills", methods=["POST"])
+    @admin_required
+    def admin_add_skill(client_id: int):
+        client = get_client_or_404(client_id)
+        title = request.form.get("title", "").strip()
+        category = request.form.get("category", "").strip()
+        notes = request.form.get("notes", "").strip()
+        practiced_at = request.form.get("practiced_at", "").strip()
+
+        if not title:
+            flash("Add a skill or intervention name before saving.", "error")
+        else:
+            add_skill_for_client(
+                client["id"],
+                title,
+                category or "Session skill",
+                notes,
+                practiced_at or datetime.now().date().isoformat(),
+            )
+            flash("Skill saved for the client portal.", "success")
+        return redirect(url_for("admin_client_detail", client_id=client_id))
 
     @app.route("/logout", methods=["POST"])
     @login_required
@@ -241,11 +378,13 @@ def create_app() -> Flask:
         return render_template("sessions.html", sessions=session_list)
 
     @app.route("/clinician/sessions", methods=["GET", "POST"])
-    @login_required
+    @admin_required
     def clinician_sessions():
+        if request.method == "GET":
+            return redirect(url_for("admin_clients"))
         clients = query_all("select id, full_name, email from clients order by full_name")
         if request.method == "POST":
-            client_id = int(request.form.get("client_id", g.client["id"]))
+            client_id = int(request.form.get("client_id", 0))
             session_date = request.form.get("session_date", "").strip()
             title = request.form.get("title", "").strip()
             summary = request.form.get("summary", "").strip()
@@ -256,31 +395,7 @@ def create_app() -> Flask:
                 flash("Add a session title before saving.", "error")
             else:
                 saved_date = session_date or datetime.now().date().isoformat()
-                execute(
-                    """
-                    insert into therapy_sessions
-                        (client_id, session_date, title, summary, key_skills, next_steps, created_at)
-                    values (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (client_id, saved_date, title, summary, key_skills, next_steps, now_iso()),
-                )
-                for skill in parse_skill_lines(key_skills):
-                    execute(
-                        """
-                        insert into client_skills
-                            (client_id, title, category, notes, practiced_at, created_at)
-                        values (?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            client_id,
-                            skill,
-                            "Session skill",
-                            f"Added from session: {title}",
-                            saved_date,
-                            now_iso(),
-                        ),
-                    )
-                record_audit(client_id, "session_added", f"Added session: {title}")
+                add_session_for_client(client_id, saved_date, title, summary, key_skills, next_steps)
                 flash("Session saved.", "success")
                 return redirect(url_for("clinician_sessions"))
 
@@ -350,6 +465,26 @@ def login_required(view):
     return wrapped_view
 
 
+def admin_required(view):
+    @wraps(view)
+    def wrapped_view(**kwargs):
+        if g.admin is None:
+            return redirect(url_for("admin_login"))
+        return view(**kwargs)
+
+    return wrapped_view
+
+
+def get_client_or_404(client_id: int) -> sqlite3.Row:
+    client = query_one(
+        "select id, email, full_name, preferred_name, phone, created_at from clients where id = ?",
+        (client_id,),
+    )
+    if client is None:
+        abort(404)
+    return client
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -378,6 +513,50 @@ def first_name(value: str) -> str:
     return parts[0] if parts else ""
 
 
+def add_skill_for_client(
+    client_id: int,
+    title: str,
+    category: str,
+    notes: str,
+    practiced_at: str,
+) -> None:
+    execute(
+        """
+        insert into client_skills (client_id, title, category, notes, practiced_at, created_at)
+        values (?, ?, ?, ?, ?, ?)
+        """,
+        (client_id, title, category, notes, practiced_at, now_iso()),
+    )
+    record_audit(client_id, "skill_added", f"Added skill: {title}")
+
+
+def add_session_for_client(
+    client_id: int,
+    session_date: str,
+    title: str,
+    summary: str,
+    key_skills: str,
+    next_steps: str,
+) -> None:
+    execute(
+        """
+        insert into therapy_sessions
+            (client_id, session_date, title, summary, key_skills, next_steps, created_at)
+        values (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (client_id, session_date, title, summary, key_skills, next_steps, now_iso()),
+    )
+    for skill in parse_skill_lines(key_skills):
+        add_skill_for_client(
+            client_id,
+            skill,
+            "Session skill",
+            f"Added from session: {title}",
+            session_date,
+        )
+    record_audit(client_id, "session_added", f"Added session: {title}")
+
+
 def init_db(app: Flask) -> None:
     with app.app_context():
         db = get_db()
@@ -390,6 +569,14 @@ def init_db(app: Flask) -> None:
                 full_name text not null,
                 preferred_name text,
                 phone text,
+                created_at text not null
+            );
+
+            create table if not exists admins (
+                id integer primary key autoincrement,
+                email text not null unique,
+                password_hash text not null,
+                full_name text not null,
                 created_at text not null
             );
 
@@ -444,6 +631,7 @@ def init_db(app: Flask) -> None:
         db.commit()
         seed_demo_data()
         ensure_demo_session_data()
+        ensure_master_account()
 
 
 def seed_demo_data() -> None:
@@ -540,6 +728,29 @@ def ensure_demo_session_data() -> None:
             "Practise the grounding sequence once daily and note when it feels easier to access.",
             now_iso(),
         ),
+    )
+
+
+def ensure_master_account() -> None:
+    existing = query_one("select id from admins limit 1")
+    if existing is not None:
+        return
+
+    email = os.environ.get("MASTER_EMAIL", "").strip().lower()
+    password = os.environ.get("MASTER_PASSWORD", "")
+    full_name = os.environ.get("MASTER_NAME", "TMG Psychology").strip()
+    if not email or not password:
+        if os.environ.get("FLASK_ENV") == "production":
+            return
+        email = "admin@example.com"
+        password = "change-me-now"
+
+    execute(
+        """
+        insert into admins (email, password_hash, full_name, created_at)
+        values (?, ?, ?, ?)
+        """,
+        (email, generate_password_hash(password), full_name, now_iso()),
     )
 
 

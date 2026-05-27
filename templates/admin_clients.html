@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Clients{% endblock %}
+
+{% block content %}
+  <section class="page-section">
+    <p class="eyebrow">Admin workspace</p>
+    <h1>Clients</h1>
+    <p>Open a client to review their profile, sessions, skills, and portal activity.</p>
+  </section>
+
+  <section class="admin-list" aria-label="Client list">
+    {% for client in clients %}
+      <a class="panel client-row" href="{{ url_for('admin_client_detail', client_id=client.id) }}">
+        <div>
+          <strong>{{ client.full_name }}</strong>
+          <small>{{ client.email }}</small>
+        </div>
+        <div class="client-row-stats">
+          <span>{{ client.session_count }} sessions</span>
+          <span>{{ client.skill_count }} skills</span>
+        </div>
+      </a>
+    {% else %}
+      <article class="panel">
+        <p class="empty-state">No clients have created accounts yet.</p>
+      </article>
+    {% endfor %}
+  </section>
+{% endblock %}
+

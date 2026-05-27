@@ -430,6 +430,57 @@ textarea:focus {
   max-width: 880px;
 }
 
+.admin-list {
+  display: grid;
+  gap: 14px;
+}
+
+.client-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  text-decoration: none;
+}
+
+.client-row strong,
+.client-row small {
+  display: block;
+}
+
+.client-row small {
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.client-row-stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.client-row-stats span {
+  border-radius: 999px;
+  background: var(--panel-soft);
+  color: var(--accent-strong);
+  font-size: 0.9rem;
+  font-weight: 800;
+  padding: 7px 11px;
+  white-space: nowrap;
+}
+
+.admin-profile {
+  box-shadow: var(--shadow-soft);
+}
+
+.admin-two-column {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 18px;
+}
+
 .skill-card {
   display: grid;
   gap: 16px;
@@ -578,10 +629,20 @@ textarea:focus {
   }
 
   .login-shell,
+  .admin-two-column,
   .dashboard-grid,
   .skill-list,
   .split-section {
     grid-template-columns: 1fr;
+  }
+
+  .client-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .client-row-stats {
+    justify-content: flex-start;
   }
 
   .form-row {

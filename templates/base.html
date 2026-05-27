@@ -9,19 +9,25 @@
   </head>
   <body>
     <header class="site-header">
-      <a class="brand" href="{{ url_for('dashboard') if g.client else url_for('login') }}">
+      <a class="brand" href="{{ url_for('admin_clients') if g.admin else (url_for('dashboard') if g.client else url_for('login')) }}">
         <span class="brand-mark">EP</span>
         <span>
           <strong>Engineered Psychology</strong>
           <small>Client Portal</small>
         </span>
       </a>
-      {% if g.client and request.endpoint not in ["login", "create_account"] %}
+      {% if g.admin %}
+        <nav class="nav-links" aria-label="Admin">
+          <a href="{{ url_for('admin_clients') }}">Clients</a>
+          <form method="post" action="{{ url_for('admin_logout') }}">
+            <button class="text-button" type="submit">Sign out</button>
+          </form>
+        </nav>
+      {% elif g.client and request.endpoint not in ["login", "create_account", "admin_login"] %}
         <nav class="nav-links" aria-label="Portal">
           <a href="{{ url_for('dashboard') }}">Dashboard</a>
           <a href="{{ url_for('skills') }}">Skills</a>
           <a href="{{ url_for('sessions') }}">Sessions</a>
-          <a href="{{ url_for('clinician_sessions') }}">Clinician</a>
           <a href="{{ url_for('profile') }}">Profile</a>
           <form method="post" action="{{ url_for('logout') }}">
             <button class="text-button" type="submit">Sign out</button>

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Sign In{% endblock %}
+
+{% block content %}
+  <section class="login-shell">
+    <div class="login-copy">
+      <h1>Engineered Psychology</h1>
+      <p class="brand-subline">Admin workspace</p>
+      <p>Sign in to manage client portal content.</p>
+    </div>
+
+    <form class="auth-panel" method="post" action="{{ url_for('admin_login') }}">
+      <div class="auth-heading">
+        <p class="eyebrow">Master account</p>
+        <h2>Admin sign in</h2>
+      </div>
+      <label>
+        <span>Email</span>
+        <input type="email" name="email" value="{{ email or '' }}" autocomplete="email" required>
+      </label>
+      <label>
+        <span>Password</span>
+        <span class="password-field">
+          <input type="password" name="password" autocomplete="current-password" required data-password-input>
+          <button type="button" class="reveal-button" data-password-toggle>Show</button>
+        </span>
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" name="remember_device">
+        <span>Remember this device</span>
+      </label>
+      <button class="primary-button" type="submit">Sign in</button>
+    </form>
+  </section>
+{% endblock %}
+
