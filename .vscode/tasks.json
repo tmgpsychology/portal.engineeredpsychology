@@ -13,6 +13,20 @@
         "cwd": "${workspaceFolder}"
       },
       "problemMatcher": []
+    },
+    {
+      "label": "Deploy: Push Portal To EC2",
+      "type": "process",
+      "command": "/bin/bash",
+      "args": [
+        "scripts/deploy_to_ec2.sh",
+        "100.53.132.84",
+        "ec2-user"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
     }
   ],
   "inputs": [
