@@ -25,11 +25,17 @@
       </label>
       <label>
         <span>Password</span>
-        <input type="password" name="password" autocomplete="new-password" required>
+        <span class="password-field">
+          <input type="password" name="password" autocomplete="new-password" required data-password-input>
+          <button type="button" class="reveal-button" data-password-toggle>Show</button>
+        </span>
       </label>
       <label>
         <span>Confirm password</span>
-        <input type="password" name="confirm_password" autocomplete="new-password" required>
+        <span class="password-field">
+          <input type="password" name="confirm_password" autocomplete="new-password" required data-password-input>
+          <button type="button" class="reveal-button" data-password-toggle>Show</button>
+        </span>
       </label>
       <button class="primary-button" type="submit">Create account</button>
       <p class="auth-secondary">

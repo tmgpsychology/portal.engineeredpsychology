@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 
@@ -28,6 +28,7 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-only-change-me")
     app.config["DATABASE_PATH"] = os.environ.get("DATABASE_PATH", str(BASE_DIR / "portal.db"))
+    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
 
     @app.before_request
     def load_logged_in_client() -> None:
@@ -64,6 +65,7 @@ def create_app() -> Flask:
                 return render_template("login.html", email=email), 401
 
             session.clear()
+            session.permanent = request.form.get("remember_device") == "on"
             session["client_id"] = client["id"]
             record_audit(client["id"], "login", "Client signed in")
             return redirect(url_for("dashboard"))

@@ -21,7 +21,14 @@
       </label>
       <label>
         <span>Password</span>
-        <input type="password" name="password" autocomplete="current-password" required>
+        <span class="password-field">
+          <input type="password" name="password" autocomplete="current-password" required data-password-input>
+          <button type="button" class="reveal-button" data-password-toggle>Show</button>
+        </span>
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" name="remember_device">
+        <span>Remember this device</span>
       </label>
       <button class="primary-button" type="submit">Sign in</button>
       <p class="auth-secondary">
