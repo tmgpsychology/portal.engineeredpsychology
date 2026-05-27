@@ -5,12 +5,16 @@
 {% block content %}
   <section class="login-shell">
     <div class="login-copy">
-      <p class="eyebrow">Secure client access</p>
-      <h1>Sign in to your portal</h1>
-      <p>Access messages, documents, and shared resources from Engineered Psychology.</p>
+      <h1>Engineered Psychology</h1>
+      <p class="brand-subline">by TMG Psychology</p>
+      <p>Please sign in to your secure account.</p>
     </div>
 
     <form class="auth-panel" method="post" action="{{ url_for('login') }}">
+      <div class="auth-heading">
+        <p class="eyebrow">Secure account</p>
+        <h2>Sign in</h2>
+      </div>
       <label>
         <span>Email</span>
         <input type="email" name="email" value="{{ email or '' }}" autocomplete="email" required>
@@ -20,7 +24,10 @@
         <input type="password" name="password" autocomplete="current-password" required>
       </label>
       <button class="primary-button" type="submit">Sign in</button>
+      <p class="auth-secondary">
+        Don't have an account?
+        <a href="{{ url_for('create_account') }}">Create account</a>
+      </p>
     </form>
   </section>
 {% endblock %}
-

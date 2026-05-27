@@ -15,7 +15,7 @@
           <small>Client Portal</small>
         </span>
       </a>
-      {% if g.client %}
+      {% if g.client and request.endpoint not in ["login", "create_account"] %}
         <nav class="nav-links" aria-label="Portal">
           <a href="{{ url_for('dashboard') }}">Dashboard</a>
           <a href="{{ url_for('skills') }}">Skills</a>

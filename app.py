@@ -70,6 +70,49 @@ def create_app() -> Flask:
 
         return render_template("login.html")
 
+    @app.route("/create-account", methods=["GET", "POST"])
+    def create_account():
+        if request.method == "POST":
+            full_name = request.form.get("full_name", "").strip()
+            email = request.form.get("email", "").strip().lower()
+            password = request.form.get("password", "")
+            confirm_password = request.form.get("confirm_password", "")
+
+            if not full_name or not email or not password:
+                flash("Add your name, email, and password to create an account.", "error")
+            elif password != confirm_password:
+                flash("Passwords do not match.", "error")
+            elif len(password) < 8:
+                flash("Use a password with at least 8 characters.", "error")
+            else:
+                try:
+                    execute(
+                        """
+                        insert into clients
+                            (email, password_hash, full_name, preferred_name, phone, created_at)
+                        values (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            email,
+                            generate_password_hash(password),
+                            full_name,
+                            first_name(full_name),
+                            "",
+                            now_iso(),
+                        ),
+                    )
+                except sqlite3.IntegrityError:
+                    flash("An account already exists for that email.", "error")
+                else:
+                    client = query_one("select id from clients where email = ?", (email,))
+                    if client is not None:
+                        session.clear()
+                        session["client_id"] = client["id"]
+                        record_audit(client["id"], "account_created", "Client account created")
+                        return redirect(url_for("dashboard"))
+
+        return render_template("create_account.html")
+
     @app.route("/logout", methods=["POST"])
     @login_required
     def logout():
@@ -326,6 +369,11 @@ def parse_skill_lines(value: str) -> list[str]:
         if skill:
             skills.append(skill)
     return skills
+
+
+def first_name(value: str) -> str:
+    parts = value.strip().split()
+    return parts[0] if parts else ""
 
 
 def init_db(app: Flask) -> None:

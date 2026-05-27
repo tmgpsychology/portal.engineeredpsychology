@@ -8,6 +8,7 @@
   --line: #d9ded7;
   --panel: #fbfaf5;
   --panel-soft: #f3f0e9;
+  --panel-warm: #fffcf6;
   --accent: #2f776d;
   --accent-strong: #155b52;
   --warn: #a84f18;
@@ -104,8 +105,8 @@ main {
 
 .login-shell {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
-  gap: clamp(28px, 6vw, 72px);
+  grid-template-columns: minmax(0, 0.95fr) minmax(320px, 440px);
+  gap: clamp(32px, 8vw, 96px);
   align-items: center;
   min-height: calc(100vh - 160px);
 }
@@ -119,6 +120,10 @@ main {
   max-width: 720px;
 }
 
+.login-copy h1 {
+  font-size: 3.1rem;
+}
+
 .login-copy p,
 .dashboard-hero p,
 .page-section > p {
@@ -126,6 +131,13 @@ main {
   color: var(--page-muted);
   font-size: 1.08rem;
   line-height: 1.6;
+}
+
+.brand-subline {
+  margin: 10px 0 18px;
+  color: var(--page-ink);
+  font-size: 1.35rem;
+  font-weight: 850;
 }
 
 .eyebrow {
@@ -150,8 +162,23 @@ main {
 
 .auth-panel {
   display: grid;
-  gap: 18px;
-  padding: 24px;
+  gap: 17px;
+  padding: 30px;
+  background: var(--panel-warm);
+  border-color: rgba(255, 255, 255, 0.34);
+  border-radius: 12px;
+  box-shadow: 0 28px 80px rgba(5, 12, 10, 0.38);
+}
+
+.auth-heading {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.auth-heading h2 {
+  margin: 0;
+  font-size: 1.45rem;
 }
 
 label {
@@ -167,7 +194,7 @@ textarea {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 13px 14px;
+  padding: 14px 15px;
   font: inherit;
   color: var(--ink);
   background: #fffdf9;
@@ -185,9 +212,9 @@ textarea:focus {
 }
 
 .primary-button {
-  min-height: 48px;
+  min-height: 52px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--accent);
   color: #fff;
   font: inherit;
@@ -197,6 +224,19 @@ textarea:focus {
 
 .primary-button:hover {
   background: var(--accent-strong);
+}
+
+.auth-secondary {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+  text-align: center;
+}
+
+.auth-secondary a {
+  color: var(--accent-strong);
+  font-weight: 850;
+  text-decoration: none;
 }
 
 .dashboard-hero {
@@ -475,6 +515,10 @@ textarea:focus {
     line-height: 1.06;
   }
 
+  .login-copy h1 {
+    font-size: 2.1rem;
+  }
+
   .login-copy p,
   .dashboard-hero p,
   .page-section > p {
@@ -532,5 +576,9 @@ textarea:focus {
   .entry-form,
   .auth-panel {
     padding: 16px;
+  }
+
+  .auth-panel {
+    border-radius: 10px;
   }
 }
