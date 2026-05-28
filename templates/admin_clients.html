@@ -6,7 +6,7 @@
   <section class="page-section">
     <p class="eyebrow">Admin workspace</p>
     <h1>Clients</h1>
-    <p>Open a client to review their profile, sessions, skills, and portal activity.</p>
+    <p>Open a client to review their profile and add session cards for their portal.</p>
   </section>
 
   <section class="admin-list" aria-label="Client list">
@@ -18,7 +18,6 @@
         </div>
         <div class="client-row-stats">
           <span>{{ client.session_count }} sessions</span>
-          <span>{{ client.skill_count }} skills</span>
         </div>
       </a>
     {% else %}
@@ -28,4 +27,3 @@
     {% endfor %}
   </section>
 {% endblock %}
-

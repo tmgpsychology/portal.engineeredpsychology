@@ -26,7 +26,7 @@
     <form class="entry-form elevated-form" method="post" action="{{ url_for('admin_add_session', client_id=client.id) }}">
       <div class="auth-heading">
         <p class="eyebrow">Add to portal</p>
-        <h2>Session note</h2>
+        <h2>Session card</h2>
       </div>
       <div class="form-row">
         <label>
@@ -43,112 +43,50 @@
         <textarea name="summary" rows="4" placeholder="Client-facing summary of themes, practice, or progress."></textarea>
       </label>
       <label>
-        <span>Key skills built</span>
-        <textarea name="key_skills" rows="4" placeholder="One skill per line."></textarea>
+        <span>Skills and interventions</span>
+        <textarea name="key_skills" rows="4" placeholder="One item per line."></textarea>
       </label>
       <label>
         <span>Between-session focus</span>
         <textarea name="next_steps" rows="3" placeholder="Practice task or reminder before next session."></textarea>
       </label>
-      <button class="primary-button" type="submit">Save session</button>
+      <button class="primary-button" type="submit">Save session card</button>
     </form>
   </section>
 
-  <section class="admin-two-column">
-    <form class="entry-form" method="post" action="{{ url_for('admin_add_skill', client_id=client.id) }}">
-      <div class="auth-heading">
-        <p class="eyebrow">Add to portal</p>
-        <h2>Skill or intervention</h2>
-      </div>
-      <label>
-        <span>Skill or intervention</span>
-        <input name="title" placeholder="e.g. Grounding practice" required>
-      </label>
-      <div class="form-row">
-        <label>
-          <span>Category</span>
-          <input name="category" placeholder="e.g. Regulation">
-        </label>
-        <label>
-          <span>Date discussed</span>
-          <input type="date" name="practiced_at">
-        </label>
-      </div>
-      <label>
-        <span>Notes</span>
-        <textarea name="notes" rows="4" placeholder="When to use it, how it works, or what to practise."></textarea>
-      </label>
-      <button class="primary-button" type="submit">Save skill</button>
-    </form>
-
-    <article class="panel">
-      <div class="panel-heading">
-        <h2>Activity</h2>
-      </div>
-      <div class="timeline">
-        {% for event in activity %}
-          <div class="timeline-row">
-            <span></span>
-            <div>
-              <strong>{{ event.event_type.replace("_", " ").title() }}</strong>
-              <small>{{ event.created_at }}</small>
-              <p>{{ event.detail }}</p>
+  <section class="session-list" aria-label="Session cards">
+    {% for session in sessions %}
+      <article class="panel session-card">
+        <div class="session-meta">
+          <span>{{ session.session_date }}</span>
+          <h2>{{ session.title }}</h2>
+        </div>
+        {% if session.summary %}
+          <p>{{ session.summary }}</p>
+        {% endif %}
+        {% if session.key_skills %}
+          <div>
+            <strong>Skills and interventions</strong>
+            <div class="chip-row">
+              {% for skill in session.key_skills.splitlines() %}
+                {% if skill.strip() %}
+                  <span class="chip">{{ skill.strip() }}</span>
+                {% endif %}
+              {% endfor %}
             </div>
           </div>
-        {% else %}
-          <p class="empty-state">No activity recorded.</p>
-        {% endfor %}
-      </div>
-    </article>
-  </section>
-
-  <section class="admin-two-column">
-    <article class="panel">
-      <div class="panel-heading">
-        <h2>Sessions</h2>
-      </div>
-      <div class="item-list">
-        {% for session in sessions %}
-          <div class="list-item">
-            <strong>{{ session.title }}</strong>
-            <small>{{ session.session_date }}</small>
-            {% if session.summary %}
-              <p>{{ session.summary }}</p>
-            {% endif %}
-            {% if session.key_skills %}
-              <div class="chip-row">
-                {% for skill in session.key_skills.splitlines() %}
-                  {% if skill.strip() %}
-                    <span class="chip">{{ skill.strip() }}</span>
-                  {% endif %}
-                {% endfor %}
-              </div>
-            {% endif %}
+        {% endif %}
+        {% if session.next_steps %}
+          <div class="next-steps">
+            <strong>Between-session focus</strong>
+            <p>{{ session.next_steps }}</p>
           </div>
-        {% else %}
-          <p class="empty-state">No sessions added yet.</p>
-        {% endfor %}
-      </div>
-    </article>
-
-    <article class="panel">
-      <div class="panel-heading">
-        <h2>Skills</h2>
-      </div>
-      <div class="item-list">
-        {% for skill in skills %}
-          <div class="list-item compact">
-            <strong>{{ skill.title }}</strong>
-            <small>{{ skill.category }} · {{ skill.practiced_at }}</small>
-            {% if skill.notes %}
-              <p>{{ skill.notes }}</p>
-            {% endif %}
-          </div>
-        {% else %}
-          <p class="empty-state">No skills added yet.</p>
-        {% endfor %}
-      </div>
-    </article>
+        {% endif %}
+      </article>
+    {% else %}
+      <article class="panel">
+        <p class="empty-state">No sessions added yet.</p>
+      </article>
+    {% endfor %}
   </section>
 {% endblock %}
-

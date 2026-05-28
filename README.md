@@ -7,9 +7,8 @@ This project is intentionally separate from the internal admin app. It starts wi
 - client login with hashed passwords
 - mobile-friendly client dashboard
 - profile details
-- secure messages
-- documents list
-- activity audit events
+- session cards
+- skills and interventions attached to sessions
 - SQLite storage for the first deployment phase
 
 ## Local Setup
@@ -44,4 +43,3 @@ Recommended EC2 layout:
 Recommended local port: `3020`.
 
 Use the files in `deploy/` as the starting point for systemd and nginx.
-

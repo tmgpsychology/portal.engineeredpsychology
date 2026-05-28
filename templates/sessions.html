@@ -5,8 +5,8 @@
 {% block content %}
   <section class="page-section">
     <p class="eyebrow">Session timeline</p>
-    <h1>Session notes and skills</h1>
-    <p>Review the main themes, skills, and next steps from each session.</p>
+    <h1>Sessions</h1>
+    <p>Review each session card and the things added from that session.</p>
   </section>
 
   <section class="session-list" aria-label="Session timeline">
@@ -21,7 +21,7 @@
         {% endif %}
         {% if session.key_skills %}
           <div>
-            <strong>Skills built</strong>
+            <strong>Skills and interventions</strong>
             <div class="chip-row">
               {% for skill in session.key_skills.splitlines() %}
                 {% if skill.strip() %}
@@ -45,4 +45,3 @@
     {% endfor %}
   </section>
 {% endblock %}
-

@@ -26,7 +26,6 @@
       {% elif g.client and request.endpoint not in ["login", "create_account", "admin_login"] %}
         <nav class="nav-links" aria-label="Portal">
           <a href="{{ url_for('dashboard') }}">Dashboard</a>
-          <a href="{{ url_for('skills') }}">Skills</a>
           <a href="{{ url_for('sessions') }}">Sessions</a>
           <a href="{{ url_for('profile') }}">Profile</a>
           <form method="post" action="{{ url_for('logout') }}">

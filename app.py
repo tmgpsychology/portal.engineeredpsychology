@@ -161,11 +161,9 @@ def create_app() -> Flask:
                 c.email,
                 c.phone,
                 c.created_at,
-                count(distinct ts.id) as session_count,
-                count(distinct cs.id) as skill_count
+                count(distinct ts.id) as session_count
             from clients c
             left join therapy_sessions ts on ts.client_id = c.id
-            left join client_skills cs on cs.client_id = c.id
             group by c.id
             order by c.full_name
             """
@@ -185,31 +183,10 @@ def create_app() -> Flask:
             """,
             (client_id,),
         )
-        skills = query_all(
-            """
-            select id, title, category, notes, practiced_at, created_at
-            from client_skills
-            where client_id = ?
-            order by practiced_at desc, created_at desc
-            """,
-            (client_id,),
-        )
-        activity = query_all(
-            """
-            select event_type, detail, created_at
-            from audit_events
-            where client_id = ?
-            order by created_at desc
-            limit 12
-            """,
-            (client_id,),
-        )
         return render_template(
             "admin_client_detail.html",
             client=client,
             sessions=sessions,
-            skills=skills,
-            activity=activity,
         )
 
     @app.route("/admin/clients/<int:client_id>/sessions", methods=["POST"])
@@ -230,28 +207,6 @@ def create_app() -> Flask:
             flash("Session saved for the client portal.", "success")
         return redirect(url_for("admin_client_detail", client_id=client_id))
 
-    @app.route("/admin/clients/<int:client_id>/skills", methods=["POST"])
-    @admin_required
-    def admin_add_skill(client_id: int):
-        client = get_client_or_404(client_id)
-        title = request.form.get("title", "").strip()
-        category = request.form.get("category", "").strip()
-        notes = request.form.get("notes", "").strip()
-        practiced_at = request.form.get("practiced_at", "").strip()
-
-        if not title:
-            flash("Add a skill or intervention name before saving.", "error")
-        else:
-            add_skill_for_client(
-                client["id"],
-                title,
-                category or "Session skill",
-                notes,
-                practiced_at or datetime.now().date().isoformat(),
-            )
-            flash("Skill saved for the client portal.", "success")
-        return redirect(url_for("admin_client_detail", client_id=client_id))
-
     @app.route("/logout", methods=["POST"])
     @login_required
     def logout():
@@ -262,63 +217,18 @@ def create_app() -> Flask:
     @app.route("/dashboard")
     @login_required
     def dashboard():
-        messages = query_all(
-            """
-            select subject, body, created_at, sender_label
-            from messages
-            where client_id = ?
-            order by created_at desc
-            limit 5
-            """,
-            (g.client["id"],),
-        )
-        documents = query_all(
-            """
-            select title, description, status, uploaded_at
-            from documents
-            where client_id = ?
-            order by uploaded_at desc
-            limit 5
-            """,
-            (g.client["id"],),
-        )
-        skills = query_all(
-            """
-            select title, category, practiced_at
-            from client_skills
-            where client_id = ?
-            order by practiced_at desc, created_at desc
-            limit 4
-            """,
-            (g.client["id"],),
-        )
-        activity = query_all(
-            """
-            select event_type, detail, created_at
-            from audit_events
-            where client_id = ?
-            order by created_at desc
-            limit 8
-            """,
-            (g.client["id"],),
-        )
         sessions = query_all(
             """
-            select session_date, title, key_skills
+            select session_date, title, summary, key_skills, next_steps
             from therapy_sessions
             where client_id = ?
             order by session_date desc, created_at desc
-            limit 3
             """,
             (g.client["id"],),
         )
         return render_template(
             "dashboard.html",
-            messages=messages,
-            documents=documents,
-            skills=skills,
             sessions=sessions,
-            activity=activity,
         )
 
     @app.route("/skills", methods=["GET", "POST"])
@@ -376,43 +286,6 @@ def create_app() -> Flask:
             (g.client["id"],),
         )
         return render_template("sessions.html", sessions=session_list)
-
-    @app.route("/clinician/sessions", methods=["GET", "POST"])
-    @admin_required
-    def clinician_sessions():
-        if request.method == "GET":
-            return redirect(url_for("admin_clients"))
-        clients = query_all("select id, full_name, email from clients order by full_name")
-        if request.method == "POST":
-            client_id = int(request.form.get("client_id", 0))
-            session_date = request.form.get("session_date", "").strip()
-            title = request.form.get("title", "").strip()
-            summary = request.form.get("summary", "").strip()
-            key_skills = request.form.get("key_skills", "").strip()
-            next_steps = request.form.get("next_steps", "").strip()
-
-            if not title:
-                flash("Add a session title before saving.", "error")
-            else:
-                saved_date = session_date or datetime.now().date().isoformat()
-                add_session_for_client(client_id, saved_date, title, summary, key_skills, next_steps)
-                flash("Session saved.", "success")
-                return redirect(url_for("clinician_sessions"))
-
-        recent_sessions = query_all(
-            """
-            select ts.session_date, ts.title, ts.summary, ts.key_skills, ts.next_steps, c.full_name
-            from therapy_sessions ts
-            join clients c on c.id = ts.client_id
-            order by ts.session_date desc, ts.created_at desc
-            limit 8
-            """,
-        )
-        return render_template(
-            "clinician_sessions.html",
-            clients=clients,
-            recent_sessions=recent_sessions,
-        )
 
     @app.route("/profile")
     @login_required
@@ -580,24 +453,6 @@ def init_db(app: Flask) -> None:
                 created_at text not null
             );
 
-            create table if not exists messages (
-                id integer primary key autoincrement,
-                client_id integer not null references clients(id),
-                sender_label text not null,
-                subject text not null,
-                body text not null,
-                created_at text not null
-            );
-
-            create table if not exists documents (
-                id integer primary key autoincrement,
-                client_id integer not null references clients(id),
-                title text not null,
-                description text,
-                status text not null default 'available',
-                uploaded_at text not null
-            );
-
             create table if not exists client_skills (
                 id integer primary key autoincrement,
                 client_id integer not null references clients(id),
@@ -660,32 +515,6 @@ def seed_demo_data() -> None:
         return
 
     client_id = client["id"]
-    execute(
-        """
-        insert into messages (client_id, sender_label, subject, body, created_at)
-        values (?, ?, ?, ?, ?)
-        """,
-        (
-            client_id,
-            "Engineered Psychology",
-            "Welcome to your portal",
-            "This is the first placeholder message. We can replace this with secure messaging next.",
-            created_at,
-        ),
-    )
-    execute(
-        """
-        insert into documents (client_id, title, description, status, uploaded_at)
-        values (?, ?, ?, ?, ?)
-        """,
-        (
-            client_id,
-            "Getting started",
-            "A placeholder document entry for the first portal dashboard.",
-            "available",
-            created_at,
-        ),
-    )
     execute(
         """
         insert into client_skills (client_id, title, category, notes, practiced_at, created_at)
