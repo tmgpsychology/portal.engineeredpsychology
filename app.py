@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import html
+import json
 import secrets
 import sqlite3
 import smtplib
@@ -9,6 +11,10 @@ from hashlib import sha256
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
+from urllib.error import HTTPError
+from urllib.parse import quote_plus, urlencode
+from urllib.request import Request as UrlRequest
+from urllib.request import urlopen
 
 from dotenv import load_dotenv
 from flask import (
@@ -27,6 +33,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
+ENV_FILE_CACHE: dict[Path, dict[str, str]] = {}
 
 
 def create_app() -> Flask:
@@ -499,6 +506,47 @@ TMG Psychology
 
 
 def send_email(to_email: str, subject: str, body: str) -> bool:
+    provider = get_setting("MAIL_PROVIDER").lower()
+    if provider == "graph" or (not provider and graph_mail_configured()):
+        return send_graph_email(to_email, subject, body)
+    return send_smtp_email(to_email, subject, body)
+
+
+def send_graph_email(to_email: str, subject: str, body: str) -> bool:
+    from flask import current_app
+
+    mailbox = get_graph_mailbox()
+    if not mailbox:
+        current_app.logger.error("Microsoft Graph mailbox is not configured; password reset email was not sent.")
+        return False
+
+    try:
+        token = get_graph_access_token()
+        payload = {
+            "message": {
+                "subject": subject,
+                "body": {
+                    "contentType": "HTML",
+                    "content": format_email_html(body),
+                },
+                "toRecipients": [{"emailAddress": {"address": to_email}}],
+            },
+            "saveToSentItems": True,
+        }
+        graph_json(
+            "POST",
+            f"https://graph.microsoft.com/v1.0/users/{quote_plus(mailbox)}/sendMail",
+            token,
+            payload,
+        )
+    except Exception as exc:
+        current_app.logger.exception("Failed to send password reset email via Microsoft Graph: %s", exc)
+        return False
+
+    return True
+
+
+def send_smtp_email(to_email: str, subject: str, body: str) -> bool:
     from flask import current_app
 
     smtp_host = os.environ.get("SMTP_HOST", "").strip()
@@ -537,6 +585,119 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
         return False
 
     return True
+
+
+def get_setting(name: str, default: str = "") -> str:
+    value = os.environ.get(name, "").strip()
+    if value:
+        return value
+
+    for env_path in get_extra_env_paths():
+        value = load_env_file(env_path).get(name, "").strip()
+        if value:
+            return value
+
+    return default
+
+
+def get_extra_env_paths() -> list[Path]:
+    paths = []
+    configured = os.environ.get("GRAPH_ENV_FILE", "").strip() or os.environ.get(
+        "MICROSOFT_GRAPH_ENV_FILE", ""
+    ).strip()
+    if configured:
+        paths.append(Path(configured).expanduser())
+    paths.append(BASE_DIR / ".env")
+    return paths
+
+
+def load_env_file(path: Path) -> dict[str, str]:
+    path = path.resolve()
+    if path in ENV_FILE_CACHE:
+        return ENV_FILE_CACHE[path]
+
+    values = {}
+    if path.exists():
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            values[key.strip()] = value.strip().strip('"').strip("'")
+
+    ENV_FILE_CACHE[path] = values
+    return values
+
+
+def graph_mail_configured() -> bool:
+    return all(get_setting(name) for name in ("MS_TENANT_ID", "MS_CLIENT_ID", "MS_CLIENT_SECRET"))
+
+
+def get_graph_mailbox() -> str:
+    return (
+        get_setting("OUTLOOK_EMAIL_ADDRESS")
+        or get_setting("MS_SENDER_EMAIL")
+        or get_setting("OUTLOOK_CALENDAR_EMAIL")
+        or get_setting("MAIL_FROM")
+    )
+
+
+def get_graph_access_token() -> str:
+    tenant = get_setting("MS_TENANT_ID")
+    client_id = get_setting("MS_CLIENT_ID")
+    client_secret = get_setting("MS_CLIENT_SECRET")
+    if not tenant or not client_id or not client_secret:
+        raise RuntimeError("Microsoft Graph credentials are missing")
+
+    payload = urlencode(
+        {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "scope": "https://graph.microsoft.com/.default",
+            "grant_type": "client_credentials",
+        }
+    ).encode("utf-8")
+    req = UrlRequest(
+        f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
+        data=payload,
+        method="POST",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    with urlopen(req, timeout=20) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    access_token = data.get("access_token", "")
+    if not access_token:
+        raise RuntimeError("Graph token response did not include access_token")
+    return access_token
+
+
+def graph_json(method: str, url: str, access_token: str, payload: dict | None = None) -> dict:
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Accept": "application/json",
+    }
+    data = None
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+
+    req = UrlRequest(url, data=data, method=method, headers=headers)
+    try:
+        with urlopen(req, timeout=20) as resp:
+            text = resp.read().decode("utf-8")
+            return json.loads(text) if text else {}
+    except HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"Graph request failed: HTTP {exc.code} {body}") from exc
+
+
+def format_email_html(value: str) -> str:
+    text = str(value or "").strip()
+    lower_text = text.lower()
+    if any(tag in lower_text for tag in ("<br", "<p", "<div", "<span", "<table", "<ul", "<ol", "<html")):
+        return text
+    escaped = html.escape(text)
+    return "<div>" + escaped.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "<br>") + "</div>"
 
 
 def parse_skill_lines(value: str) -> list[str]:

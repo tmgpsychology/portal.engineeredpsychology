@@ -10,34 +10,37 @@
       <p>Please sign in to your secure account.</p>
     </div>
 
-    <form class="auth-panel" method="post" action="{{ url_for('login') }}">
-      <div class="auth-heading">
-        <p class="eyebrow">Secure account</p>
-        <h2>Sign in</h2>
-      </div>
-      <label>
-        <span>Email</span>
-        <input type="email" name="email" value="{{ email or '' }}" autocomplete="email" required>
-      </label>
-      <label>
-        <span>Password</span>
-        <span class="password-field">
-          <input type="password" name="password" autocomplete="current-password" required data-password-input>
-          <button type="button" class="reveal-button" data-password-toggle>Show</button>
-        </span>
-      </label>
-      <label class="checkbox-row">
-        <input type="checkbox" name="remember_device">
-        <span>Remember this device</span>
-      </label>
-      <button class="primary-button" type="submit">Sign in</button>
-      <p class="auth-secondary">
-        <a href="{{ url_for('forgot_password') }}">Forgot your password?</a>
-      </p>
-      <p class="auth-secondary">
-        Don't have an account?
-        <a href="{{ url_for('create_account') }}">Create account</a>
-      </p>
-    </form>
+    <div class="auth-stack">
+      <form class="auth-panel" method="post" action="{{ url_for('login') }}">
+        <div class="auth-heading">
+          <p class="eyebrow">Secure account</p>
+          <h2>Sign in</h2>
+        </div>
+        <label>
+          <span>Email</span>
+          <input type="email" name="email" value="{{ email or '' }}" autocomplete="email" required>
+        </label>
+        <label>
+          <span>Password</span>
+          <span class="password-field">
+            <input type="password" name="password" autocomplete="current-password" required data-password-input>
+            <button type="button" class="reveal-button" data-password-toggle>Show</button>
+          </span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" name="remember_device">
+          <span>Remember this device</span>
+        </label>
+        <button class="primary-button" type="submit">Sign in</button>
+        <p class="auth-secondary">
+          <a href="{{ url_for('forgot_password') }}">Forgot your password?</a>
+        </p>
+        <p class="auth-secondary">
+          Don't have an account?
+          <a href="{{ url_for('create_account') }}">Create account</a>
+        </p>
+      </form>
+      <a class="therapist-login-link" href="{{ url_for('admin_login') }}">Therapist login</a>
+    </div>
   </section>
 {% endblock %}

@@ -35,9 +35,32 @@ Change this before production use.
 
 ## Password Reset Email
 
-Password reset links are sent via SMTP. Configure these in `.env`:
+Password reset links can be sent through Microsoft Graph. Configure these in `.env`:
 
 ```bash
+MAIL_PROVIDER=graph
+MS_TENANT_ID=replace-with-tenant-id
+MS_CLIENT_ID=replace-with-client-id
+MS_CLIENT_SECRET=replace-with-client-secret
+OUTLOOK_EMAIL_ADDRESS=portal@example.com
+MAIL_FROM_NAME=TMG Psychology
+PASSWORD_RESET_EXPIRY_MINUTES=60
+```
+
+If the server already has these values in the admin tools environment, point the portal at that file instead:
+
+```bash
+MAIL_PROVIDER=graph
+GRAPH_ENV_FILE=/home/ec2-user/apps/admin-tools/.env
+OUTLOOK_EMAIL_ADDRESS=portal@example.com
+MAIL_FROM_NAME=TMG Psychology
+PASSWORD_RESET_EXPIRY_MINUTES=60
+```
+
+SMTP is still supported as a fallback:
+
+```bash
+MAIL_PROVIDER=smtp
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_USERNAME=portal@example.com
