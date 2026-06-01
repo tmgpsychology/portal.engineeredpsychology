@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}Create Therapist Account{% endblock %}
+
+{% block content %}
+  <section class="login-shell">
+    <div class="login-copy">
+      <h1>Engineered Psychology</h1>
+      <p class="brand-subline">Admin workspace</p>
+      <p>Create the therapist account used to manage client portal content.</p>
+    </div>
+
+    <div class="auth-stack">
+      <form class="auth-panel" method="post" action="{{ url_for('admin_create_account') }}">
+        <div class="auth-heading">
+          <p class="eyebrow">Therapist access</p>
+          <h2>Create therapist account</h2>
+        </div>
+        {% if signup_available %}
+          <label>
+            <span>Full name</span>
+            <input name="full_name" autocomplete="name" required>
+          </label>
+          <label>
+            <span>Email</span>
+            <input type="email" name="email" autocomplete="email" required>
+          </label>
+          <label>
+            <span>Password</span>
+            <span class="password-field">
+              <input type="password" name="password" autocomplete="new-password" required data-password-input>
+              <button type="button" class="reveal-button" data-password-toggle>Show</button>
+            </span>
+          </label>
+          <label>
+            <span>Confirm password</span>
+            <span class="password-field">
+              <input type="password" name="confirm_password" autocomplete="new-password" required data-password-input>
+              <button type="button" class="reveal-button" data-password-toggle>Show</button>
+            </span>
+          </label>
+          {% if requires_setup_code %}
+            <label>
+              <span>Therapist setup code</span>
+              <input name="setup_code" autocomplete="off" required>
+            </label>
+          {% endif %}
+          <button class="primary-button" type="submit">Create account</button>
+        {% else %}
+          <p class="empty-state">
+            A therapist account already exists. Additional therapist accounts can be enabled later with a therapist setup code.
+          </p>
+        {% endif %}
+        <p class="auth-secondary">
+          Already have an account?
+          <a href="{{ url_for('admin_login') }}">Sign in</a>
+        </p>
+      </form>
+    </div>
+  </section>
+{% endblock %}

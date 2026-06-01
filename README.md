@@ -72,6 +72,12 @@ MAIL_FROM_NAME=TMG Psychology
 PASSWORD_RESET_EXPIRY_MINUTES=60
 ```
 
+## Therapist Accounts
+
+The first therapist/admin account is seeded from `MASTER_EMAIL`, `MASTER_PASSWORD`, and `MASTER_NAME`.
+After one therapist account exists, public creation of extra therapist accounts is locked unless
+`THERAPIST_SIGNUP_CODE` is configured.
+
 ## Deployment Shape
 
 Recommended EC2 layout:

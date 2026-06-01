@@ -228,6 +228,51 @@ def create_app() -> Flask:
 
         return render_template("admin_login.html")
 
+    @app.route("/admin/create-account", methods=["GET", "POST"])
+    def admin_create_account():
+        requires_setup_code = admin_account_count() > 0
+        setup_code = get_setting("THERAPIST_SIGNUP_CODE")
+
+        if request.method == "POST":
+            full_name = request.form.get("full_name", "").strip()
+            email = request.form.get("email", "").strip().lower()
+            password = request.form.get("password", "")
+            confirm_password = request.form.get("confirm_password", "")
+            submitted_code = request.form.get("setup_code", "").strip()
+
+            if not full_name or not email or not password:
+                flash("Add your name, email, and password to create a therapist account.", "error")
+            elif password != confirm_password:
+                flash("Passwords do not match.", "error")
+            elif len(password) < 8:
+                flash("Use a password with at least 8 characters.", "error")
+            elif requires_setup_code and (not setup_code or submitted_code != setup_code):
+                flash("Enter the therapist setup code to create an account.", "error")
+            else:
+                try:
+                    execute(
+                        """
+                        insert into admins (email, password_hash, full_name, created_at)
+                        values (?, ?, ?, ?)
+                        """,
+                        (email, generate_password_hash(password), full_name, now_iso()),
+                    )
+                except sqlite3.IntegrityError:
+                    flash("A therapist account already exists for that email.", "error")
+                else:
+                    admin = query_one("select id from admins where email = ?", (email,))
+                    if admin is not None:
+                        session.clear()
+                        session["admin_id"] = admin["id"]
+                        flash("Therapist account created.", "success")
+                        return redirect(url_for("admin_clients"))
+
+        return render_template(
+            "admin_create_account.html",
+            requires_setup_code=requires_setup_code,
+            signup_available=not requires_setup_code or bool(setup_code),
+        )
+
     @app.route("/admin/logout", methods=["POST"])
     @admin_required
     def admin_logout():
@@ -431,6 +476,11 @@ def admin_required(view):
         return view(**kwargs)
 
     return wrapped_view
+
+
+def admin_account_count() -> int:
+    row = query_one("select count(*) as admin_count from admins")
+    return int(row["admin_count"] if row is not None else 0)
 
 
 def get_client_or_404(client_id: int) -> sqlite3.Row:
