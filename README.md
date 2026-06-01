@@ -5,6 +5,7 @@ Standalone client-facing portal for `portal.engineeredpsychology.com`.
 This project is intentionally separate from the internal admin app. It starts with:
 
 - client login with hashed passwords
+- password reset emails from TMG Psychology
 - mobile-friendly client dashboard
 - profile details
 - session cards
@@ -31,6 +32,22 @@ The app seeds a local demo client if the database is empty:
 - Password: `change-me-now`
 
 Change this before production use.
+
+## Password Reset Email
+
+Password reset links are sent via SMTP. Configure these in `.env`:
+
+```bash
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USERNAME=portal@example.com
+SMTP_PASSWORD=replace-with-smtp-password
+SMTP_USE_TLS=true
+SMTP_USE_SSL=false
+MAIL_FROM=portal@example.com
+MAIL_FROM_NAME=TMG Psychology
+PASSWORD_RESET_EXPIRY_MINUTES=60
+```
 
 ## Deployment Shape
 

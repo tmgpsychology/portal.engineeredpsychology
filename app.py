@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import os
+import secrets
 import sqlite3
+import smtplib
+from email.message import EmailMessage
+from hashlib import sha256
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
@@ -30,6 +34,9 @@ def create_app() -> Flask:
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-only-change-me")
     app.config["DATABASE_PATH"] = os.environ.get("DATABASE_PATH", str(BASE_DIR / "portal.db"))
     app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
+    app.config["PASSWORD_RESET_EXPIRY_MINUTES"] = int(
+        os.environ.get("PASSWORD_RESET_EXPIRY_MINUTES", "60")
+    )
 
     @app.before_request
     def load_logged_in_user() -> None:
@@ -81,6 +88,77 @@ def create_app() -> Flask:
             return redirect(url_for("dashboard"))
 
         return render_template("login.html")
+
+    @app.route("/forgot-password", methods=["GET", "POST"])
+    def forgot_password():
+        if request.method == "POST":
+            email = request.form.get("email", "").strip().lower()
+            client = query_one("select id, email, full_name from clients where email = ?", (email,))
+
+            if client is not None:
+                token = secrets.token_urlsafe(32)
+                token_hash = hash_reset_token(token)
+                expires_at = (
+                    datetime.now(timezone.utc)
+                    + timedelta(minutes=app.config["PASSWORD_RESET_EXPIRY_MINUTES"])
+                ).isoformat(timespec="seconds")
+                execute(
+                    """
+                    insert into password_reset_tokens (client_id, token_hash, expires_at, created_at, used_at)
+                    values (?, ?, ?, ?, null)
+                    """,
+                    (client["id"], token_hash, expires_at, now_iso()),
+                )
+                reset_url = url_for("reset_password", token=token, _external=True)
+                send_password_reset_email(client["email"], client["full_name"], reset_url)
+                record_audit(client["id"], "password_reset_requested", "Password reset email requested")
+            elif email:
+                record_audit(None, "password_reset_requested_unknown", f"Password reset requested for {email}")
+
+            flash("If an account exists for that email, a reset link has been sent.", "success")
+            return redirect(url_for("login"))
+
+        return render_template("forgot_password.html")
+
+    @app.route("/reset-password/<token>", methods=["GET", "POST"])
+    def reset_password(token: str):
+        reset = get_valid_password_reset(token)
+        if reset is None:
+            flash("That password reset link is invalid or has expired.", "error")
+            return redirect(url_for("forgot_password"))
+
+        if request.method == "POST":
+            password = request.form.get("password", "")
+            confirm_password = request.form.get("confirm_password", "")
+
+            if not password:
+                flash("Add a new password before continuing.", "error")
+            elif password != confirm_password:
+                flash("Passwords do not match.", "error")
+            elif len(password) < 8:
+                flash("Use a password with at least 8 characters.", "error")
+            else:
+                execute(
+                    "update clients set password_hash = ? where id = ?",
+                    (generate_password_hash(password), reset["client_id"]),
+                )
+                execute(
+                    "update password_reset_tokens set used_at = ? where id = ?",
+                    (now_iso(), reset["id"]),
+                )
+                execute(
+                    """
+                    update password_reset_tokens
+                    set used_at = ?
+                    where client_id = ? and used_at is null and id != ?
+                    """,
+                    (now_iso(), reset["client_id"], reset["id"]),
+                )
+                record_audit(reset["client_id"], "password_reset_completed", "Client reset password")
+                flash("Your password has been updated. Please sign in with your new password.", "success")
+                return redirect(url_for("login"))
+
+        return render_template("reset_password.html", token=token)
 
     @app.route("/create-account", methods=["GET", "POST"])
     def create_account():
@@ -372,6 +450,95 @@ def record_audit(client_id: int | None, event_type: str, detail: str) -> None:
     )
 
 
+def hash_reset_token(token: str) -> str:
+    return sha256(token.encode("utf-8")).hexdigest()
+
+
+def get_valid_password_reset(token: str) -> sqlite3.Row | None:
+    reset = query_one(
+        """
+        select prt.id, prt.client_id, prt.expires_at
+        from password_reset_tokens prt
+        join clients c on c.id = prt.client_id
+        where prt.token_hash = ? and prt.used_at is null
+        """,
+        (hash_reset_token(token),),
+    )
+    if reset is None:
+        return None
+
+    try:
+        expires_at = datetime.fromisoformat(reset["expires_at"])
+    except ValueError:
+        return None
+
+    if expires_at <= datetime.now(timezone.utc):
+        execute("update password_reset_tokens set used_at = ? where id = ?", (now_iso(), reset["id"]))
+        return None
+
+    return reset
+
+
+def send_password_reset_email(to_email: str, full_name: str, reset_url: str) -> bool:
+    from flask import current_app
+
+    subject = "Reset your TMG Psychology client portal password"
+    greeting_name = first_name(full_name) or "there"
+    body = f"""Hi {greeting_name},
+
+We received a request to reset the password for your TMG Psychology client portal account.
+
+Use this secure link to choose a new password:
+{reset_url}
+
+This link expires in {current_app.config["PASSWORD_RESET_EXPIRY_MINUTES"]} minutes. If you did not request this, you can ignore this email.
+
+TMG Psychology
+"""
+    return send_email(to_email, subject, body)
+
+
+def send_email(to_email: str, subject: str, body: str) -> bool:
+    from flask import current_app
+
+    smtp_host = os.environ.get("SMTP_HOST", "").strip()
+    if not smtp_host:
+        current_app.logger.error("SMTP_HOST is not configured; password reset email was not sent.")
+        return False
+
+    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_user = os.environ.get("SMTP_USERNAME", "").strip()
+    smtp_password = os.environ.get("SMTP_PASSWORD", "")
+    use_tls = os.environ.get("SMTP_USE_TLS", "true").strip().lower() not in {"0", "false", "no"}
+    use_ssl = os.environ.get("SMTP_USE_SSL", "false").strip().lower() in {"1", "true", "yes"}
+    from_email = os.environ.get("MAIL_FROM", smtp_user).strip()
+    from_name = os.environ.get("MAIL_FROM_NAME", "TMG Psychology").strip()
+
+    if not from_email:
+        current_app.logger.error("MAIL_FROM or SMTP_USERNAME must be configured for outgoing email.")
+        return False
+
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = f"{from_name} <{from_email}>"
+    message["To"] = to_email
+    message.set_content(body)
+
+    try:
+        smtp_class = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
+        with smtp_class(smtp_host, smtp_port, timeout=15) as smtp:
+            if use_tls and not use_ssl:
+                smtp.starttls()
+            if smtp_user and smtp_password:
+                smtp.login(smtp_user, smtp_password)
+            smtp.send_message(message)
+    except (OSError, smtplib.SMTPException) as exc:
+        current_app.logger.exception("Failed to send password reset email: %s", exc)
+        return False
+
+    return True
+
+
 def parse_skill_lines(value: str) -> list[str]:
     skills = []
     for raw_line in value.splitlines():
@@ -481,6 +648,20 @@ def init_db(app: Flask) -> None:
                 detail text not null,
                 created_at text not null
             );
+
+            create table if not exists password_reset_tokens (
+                id integer primary key autoincrement,
+                client_id integer not null references clients(id),
+                token_hash text not null unique,
+                expires_at text not null,
+                created_at text not null,
+                used_at text
+            );
+
+            create index if not exists idx_password_reset_tokens_client
+                on password_reset_tokens(client_id);
+            create index if not exists idx_password_reset_tokens_token_hash
+                on password_reset_tokens(token_hash);
             """
         )
         db.commit()
