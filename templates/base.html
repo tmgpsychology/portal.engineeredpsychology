@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <script src="{{ url_for('static', filename='auth.js') }}" defer></script>
   </head>
-  <body>
+  <body class="{% if g.admin %}portal-admin{% else %}portal-client{% endif %}">
     <header class="site-header">
       <a class="brand" href="{{ url_for('admin_clients') if g.admin else (url_for('dashboard') if g.client else url_for('login')) }}">
         <span class="brand-mark">EP</span>

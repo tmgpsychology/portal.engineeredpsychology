@@ -44,6 +44,23 @@
         {% if skill.notes %}
           <p>{{ skill.notes }}</p>
         {% endif %}
+        {% if skill.reflection_text %}
+          <div class="client-reflection">
+            <span>Latest practice note{% if skill.reflection_practiced_at %} · {{ skill.reflection_practiced_at }}{% endif %}</span>
+            <p>{{ skill.reflection_text }}</p>
+          </div>
+        {% endif %}
+        <form class="reflection-form" method="post" action="{{ url_for('add_skill_reflection', skill_id=skill.id) }}">
+          <label>
+            <span>What happened when you tried this skill?</span>
+            <textarea name="reflection_text" rows="4" placeholder="What did you try, what happened, what helped, or what got in the way?"></textarea>
+          </label>
+          <label>
+            <span>Date tried</span>
+            <input type="date" name="practiced_at">
+          </label>
+          <button class="secondary-button" type="submit">Save practice note</button>
+        </form>
       </article>
     {% else %}
       <article class="panel">
@@ -52,4 +69,3 @@
     {% endfor %}
   </section>
 {% endblock %}
-

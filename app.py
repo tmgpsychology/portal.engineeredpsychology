@@ -306,10 +306,40 @@ def create_app() -> Flask:
         client = get_client_or_404(client_id)
         sessions = query_all(
             """
-            select id, session_date, title, summary, key_skills, next_steps, created_at
-            from therapy_sessions
-            where client_id = ?
-            order by session_date desc, created_at desc
+            select
+                ts.id,
+                ts.session_date,
+                ts.title,
+                ts.summary,
+                ts.key_skills,
+                ts.next_steps,
+                ts.created_at,
+                latest_session_reflection.reflection_text as client_reflection,
+                latest_session_reflection.created_at as client_reflection_created_at
+            from therapy_sessions ts
+            left join (
+                select sr.session_id, sr.reflection_text, sr.created_at
+                from session_reflections sr
+                join (
+                    select session_id, max(created_at) as latest_created_at
+                    from session_reflections
+                    where client_id = ?
+                    group by session_id
+                ) latest on latest.session_id = sr.session_id and latest.latest_created_at = sr.created_at
+                where sr.client_id = ?
+            ) latest_session_reflection on latest_session_reflection.session_id = ts.id
+            where ts.client_id = ?
+            order by ts.session_date desc, ts.created_at desc
+            """,
+            (client_id, client_id, client_id),
+        )
+        skill_reflections = query_all(
+            """
+            select csr.skill_id, csr.reflection_text, csr.practiced_at, csr.created_at, cs.title as skill_title
+            from client_skill_reflections csr
+            join client_skills cs on cs.id = csr.skill_id
+            where csr.client_id = ?
+            order by csr.practiced_at desc, csr.created_at desc
             """,
             (client_id,),
         )
@@ -317,6 +347,7 @@ def create_app() -> Flask:
             "admin_client_detail.html",
             client=client,
             sessions=sessions,
+            skill_reflections=skill_reflections,
         )
 
     @app.route("/admin/clients/<int:client_id>/sessions", methods=["POST"])
@@ -394,28 +425,120 @@ def create_app() -> Flask:
 
         skills_list = query_all(
             """
-            select title, category, notes, practiced_at, created_at
-            from client_skills
-            where client_id = ?
-            order by practiced_at desc, created_at desc
+            select
+                cs.id,
+                cs.title,
+                cs.category,
+                cs.notes,
+                cs.practiced_at,
+                cs.created_at,
+                latest_reflection.reflection_text,
+                latest_reflection.practiced_at as reflection_practiced_at,
+                latest_reflection.created_at as reflection_created_at
+            from client_skills cs
+            left join (
+                select csr.skill_id, csr.reflection_text, csr.practiced_at, csr.created_at
+                from client_skill_reflections csr
+                join (
+                    select skill_id, max(created_at) as latest_created_at
+                    from client_skill_reflections
+                    where client_id = ?
+                    group by skill_id
+                ) latest on latest.skill_id = csr.skill_id and latest.latest_created_at = csr.created_at
+                where csr.client_id = ?
+            ) latest_reflection on latest_reflection.skill_id = cs.id
+            where cs.client_id = ?
+            order by cs.practiced_at desc, cs.created_at desc
             """,
-            (g.client["id"],),
+            (g.client["id"], g.client["id"], g.client["id"]),
         )
         return render_template("skills.html", skills=skills_list)
+
+    @app.route("/skills/<int:skill_id>/reflections", methods=["POST"])
+    @login_required
+    def add_skill_reflection(skill_id: int):
+        skill = query_one(
+            "select id from client_skills where id = ? and client_id = ?",
+            (skill_id, g.client["id"]),
+        )
+        if skill is None:
+            abort(404)
+
+        reflection_text = request.form.get("reflection_text", "").strip()
+        practiced_at = request.form.get("practiced_at", "").strip() or datetime.now().date().isoformat()
+        if not reflection_text:
+            flash("Write what happened when you tried the skill before saving.", "error")
+        else:
+            execute(
+                """
+                insert into client_skill_reflections
+                    (client_id, skill_id, reflection_text, practiced_at, created_at)
+                values (?, ?, ?, ?, ?)
+                """,
+                (g.client["id"], skill_id, reflection_text, practiced_at, now_iso()),
+            )
+            record_audit(g.client["id"], "skill_reflection_added", "Client added skill practice reflection")
+            flash("Skill reflection saved.", "success")
+        return redirect(url_for("skills"))
 
     @app.route("/sessions")
     @login_required
     def sessions():
         session_list = query_all(
             """
-            select session_date, title, summary, key_skills, next_steps, created_at
-            from therapy_sessions
-            where client_id = ?
-            order by session_date desc, created_at desc
+            select
+                ts.id,
+                ts.session_date,
+                ts.title,
+                ts.summary,
+                ts.key_skills,
+                ts.next_steps,
+                ts.created_at,
+                latest_reflection.reflection_text,
+                latest_reflection.created_at as reflection_created_at
+            from therapy_sessions ts
+            left join (
+                select sr.session_id, sr.reflection_text, sr.created_at
+                from session_reflections sr
+                join (
+                    select session_id, max(created_at) as latest_created_at
+                    from session_reflections
+                    where client_id = ?
+                    group by session_id
+                ) latest on latest.session_id = sr.session_id and latest.latest_created_at = sr.created_at
+                where sr.client_id = ?
+            ) latest_reflection on latest_reflection.session_id = ts.id
+            where ts.client_id = ?
+            order by ts.session_date desc, ts.created_at desc
             """,
-            (g.client["id"],),
+            (g.client["id"], g.client["id"], g.client["id"]),
         )
         return render_template("sessions.html", sessions=session_list)
+
+    @app.route("/sessions/<int:session_id>/reflections", methods=["POST"])
+    @login_required
+    def add_session_reflection(session_id: int):
+        therapy_session = query_one(
+            "select id from therapy_sessions where id = ? and client_id = ?",
+            (session_id, g.client["id"]),
+        )
+        if therapy_session is None:
+            abort(404)
+
+        reflection_text = request.form.get("reflection_text", "").strip()
+        if not reflection_text:
+            flash("Write a session reflection before saving.", "error")
+        else:
+            execute(
+                """
+                insert into session_reflections (client_id, session_id, reflection_text, created_at)
+                values (?, ?, ?, ?)
+                """,
+                (g.client["id"], session_id, reflection_text, now_iso()),
+            )
+            record_audit(g.client["id"], "session_reflection_added", "Client added session reflection")
+            flash("Session reflection saved.", "success")
+        return redirect(url_for("sessions"))
 
     @app.route("/profile")
     @login_required
@@ -852,6 +975,23 @@ def init_db(app: Flask) -> None:
                 created_at text not null
             );
 
+            create table if not exists session_reflections (
+                id integer primary key autoincrement,
+                client_id integer not null references clients(id),
+                session_id integer not null references therapy_sessions(id),
+                reflection_text text not null,
+                created_at text not null
+            );
+
+            create table if not exists client_skill_reflections (
+                id integer primary key autoincrement,
+                client_id integer not null references clients(id),
+                skill_id integer not null references client_skills(id),
+                reflection_text text not null,
+                practiced_at text not null,
+                created_at text not null
+            );
+
             create table if not exists audit_events (
                 id integer primary key autoincrement,
                 client_id integer references clients(id),
@@ -873,6 +1013,10 @@ def init_db(app: Flask) -> None:
                 on password_reset_tokens(client_id);
             create index if not exists idx_password_reset_tokens_token_hash
                 on password_reset_tokens(token_hash);
+            create index if not exists idx_session_reflections_session
+                on session_reflections(session_id);
+            create index if not exists idx_client_skill_reflections_skill
+                on client_skill_reflections(skill_id);
             """
         )
         db.commit()

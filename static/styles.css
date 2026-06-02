@@ -1,17 +1,25 @@
 :root {
   color-scheme: light;
-  --bg: #17221f;
-  --page-ink: #eef4ef;
-  --page-muted: #c5d0ca;
-  --ink: #17211c;
-  --muted: #68736d;
-  --line: #d9ded7;
-  --panel: #fbfaf5;
-  --panel-soft: #f3f0e9;
-  --panel-warm: #fffcf6;
-  --accent: #2f776d;
-  --accent-strong: #155b52;
-  --warn: #a84f18;
+  --brand-teal: #155f67;
+  --brand-teal-deep: #0f4d55;
+  --brand-coral: #ff6b4f;
+  --brand-coral-soft: #ffe2da;
+  --brand-sky: #cfe3f8;
+  --brand-sky-soft: #edf6ff;
+  --brand-lavender: #8e96cf;
+  --brand-sand: #e6dfd6;
+  --bg: #155f67;
+  --page-ink: #f7fbfb;
+  --page-muted: #d5e6e8;
+  --ink: #14282d;
+  --muted: #657378;
+  --line: #d8e1e3;
+  --panel: #fffaf3;
+  --panel-soft: #f1f5f3;
+  --panel-warm: #fff7ec;
+  --accent: var(--brand-teal);
+  --accent-strong: var(--brand-teal-deep);
+  --warn: #b44b2d;
   --shadow: 0 22px 60px rgba(5, 12, 10, 0.34);
   --shadow-soft: 0 10px 28px rgba(5, 12, 10, 0.18);
 }
@@ -27,6 +35,13 @@ body {
   color: var(--page-ink);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: 0;
+}
+
+body.portal-client {
+  background:
+    linear-gradient(135deg, rgba(207, 227, 248, 0.18) 0 22%, transparent 22%),
+    linear-gradient(315deg, rgba(255, 107, 79, 0.16) 0 16%, transparent 16%),
+    var(--brand-teal);
 }
 
 a {
@@ -62,8 +77,10 @@ a {
   width: 42px;
   height: 42px;
   border-radius: 8px;
-  background: var(--accent);
-  color: #fff;
+  background:
+    linear-gradient(90deg, var(--brand-coral) 0 50%, var(--accent) 50% 100%),
+    var(--accent);
+  color: #fffaf3;
   font-weight: 800;
 }
 
@@ -141,12 +158,49 @@ main {
 }
 
 .eyebrow {
-  color: #8bc6bc;
+  color: var(--brand-sky);
   font-weight: 800;
   letter-spacing: 0;
   margin: 0 0 12px;
   text-transform: uppercase;
   font-size: 0.78rem;
+}
+
+body.portal-client .site-header {
+  border-bottom: 4px solid var(--brand-coral);
+}
+
+body.portal-client .brand strong {
+  color: var(--brand-teal-deep);
+}
+
+body.portal-client .brand-mark {
+  box-shadow: inset 0 0 0 2px rgba(20, 40, 45, 0.12);
+}
+
+body.portal-client .login-copy h1,
+body.portal-client .dashboard-hero h1,
+body.portal-client .page-section h1 {
+  text-shadow: 0 2px 0 rgba(15, 77, 85, 0.28);
+}
+
+body.portal-client .auth-panel,
+body.portal-client .entry-form,
+body.portal-client .panel,
+body.portal-client .profile-table {
+  border-color: rgba(207, 227, 248, 0.92);
+  box-shadow: 0 22px 54px rgba(15, 77, 85, 0.24);
+}
+
+body.portal-client .auth-panel,
+body.portal-client .entry-form {
+  border-top: 5px solid var(--brand-coral);
+}
+
+body.portal-client .auth-panel .eyebrow,
+body.portal-client .entry-form .eyebrow,
+body.portal-client .panel .eyebrow {
+  color: var(--brand-teal-deep);
 }
 
 .auth-panel,
@@ -239,7 +293,7 @@ textarea {
 }
 
 .password-field:focus-within {
-  outline: 3px solid rgba(15, 107, 95, 0.18);
+  outline: 3px solid rgba(255, 107, 79, 0.22);
   border-color: var(--accent);
 }
 
@@ -277,7 +331,7 @@ textarea {
 input:focus,
 select:focus,
 textarea:focus {
-  outline: 3px solid rgba(15, 107, 95, 0.18);
+  outline: 3px solid rgba(255, 107, 79, 0.22);
   border-color: var(--accent);
 }
 
@@ -294,6 +348,31 @@ textarea:focus {
 
 .primary-button:hover {
   background: var(--accent-strong);
+}
+
+body.portal-client .primary-button {
+  background: linear-gradient(135deg, var(--accent), var(--brand-teal-deep));
+  box-shadow: inset 0 -3px 0 rgba(5, 12, 10, 0.16);
+}
+
+body.portal-client .primary-button:hover {
+  background: linear-gradient(135deg, var(--brand-teal-deep), #0b3f47);
+}
+
+.secondary-button {
+  min-height: 44px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent-strong);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 0 16px;
+}
+
+.secondary-button:hover {
+  background: var(--brand-sky-soft);
 }
 
 .auth-secondary {
@@ -388,6 +467,10 @@ textarea:focus {
   background: var(--accent);
 }
 
+body.portal-client .timeline-row > span {
+  background: var(--brand-coral);
+}
+
 .empty-state {
   color: var(--muted);
   margin: 0;
@@ -480,7 +563,7 @@ textarea:focus {
 
 .client-row-stats span {
   border-radius: 999px;
-  background: var(--panel-soft);
+  background: var(--brand-sky-soft);
   color: var(--accent-strong);
   font-size: 0.9rem;
   font-weight: 800;
@@ -562,16 +645,49 @@ textarea:focus {
   align-items: center;
   min-height: 30px;
   border-radius: 999px;
-  background: #dfeee9;
+  background: var(--brand-sky-soft);
   color: var(--accent-strong);
   padding: 6px 11px;
   font-size: 0.88rem;
   font-weight: 800;
 }
 
+body.portal-client .chip:nth-child(2n) {
+  background: var(--brand-coral-soft);
+}
+
+body.portal-client .chip:nth-child(3n) {
+  background: #efeffb;
+  color: #414a8d;
+}
+
 .next-steps {
   display: grid;
   gap: 8px;
+  padding: 14px;
+  border-radius: 8px;
+  border-left: 4px solid var(--brand-lavender);
+  background: linear-gradient(90deg, #f0f1fb, var(--panel-soft));
+}
+
+.client-reflection {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  background: var(--brand-sky-soft);
+}
+
+.client-reflection span {
+  color: var(--accent-strong);
+  font-size: 0.86rem;
+  font-weight: 850;
+}
+
+.reflection-form {
+  display: grid;
+  gap: 12px;
   padding: 14px;
   border-radius: 8px;
   background: var(--panel-soft);

@@ -37,6 +37,19 @@
             <p>{{ session.next_steps }}</p>
           </div>
         {% endif %}
+        {% if session.reflection_text %}
+          <div class="client-reflection">
+            <span>My notes{% if session.reflection_created_at %} · {{ session.reflection_created_at[:10] }}{% endif %}</span>
+            <p>{{ session.reflection_text }}</p>
+          </div>
+        {% endif %}
+        <form class="reflection-form" method="post" action="{{ url_for('add_session_reflection', session_id=session.id) }}">
+          <label>
+            <span>Add your own note about this session</span>
+            <textarea name="reflection_text" rows="4" placeholder="What stood out, what you noticed later, or what you want to remember next time."></textarea>
+          </label>
+          <button class="secondary-button" type="submit">Save note</button>
+        </form>
       </article>
     {% else %}
       <article class="panel">

@@ -82,10 +82,37 @@
             <p>{{ session.next_steps }}</p>
           </div>
         {% endif %}
+        {% if session.client_reflection %}
+          <div class="client-reflection">
+            <span>Client session note{% if session.client_reflection_created_at %} · {{ session.client_reflection_created_at[:10] }}{% endif %}</span>
+            <p>{{ session.client_reflection }}</p>
+          </div>
+        {% endif %}
       </article>
     {% else %}
       <article class="panel">
         <p class="empty-state">No sessions added yet.</p>
+      </article>
+    {% endfor %}
+  </section>
+
+  <section class="page-section">
+    <p class="eyebrow">Client reflections</p>
+    <h1>Skill practice notes</h1>
+  </section>
+
+  <section class="session-list" aria-label="Skill practice notes">
+    {% for reflection in skill_reflections %}
+      <article class="panel compact">
+        <div class="session-meta">
+          <span>{{ reflection.practiced_at }}</span>
+          <h2>{{ reflection.skill_title }}</h2>
+        </div>
+        <p>{{ reflection.reflection_text }}</p>
+      </article>
+    {% else %}
+      <article class="panel">
+        <p class="empty-state">No client skill reflections yet.</p>
       </article>
     {% endfor %}
   </section>
