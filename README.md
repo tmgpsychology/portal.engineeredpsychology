@@ -78,6 +78,21 @@ The first therapist/admin account is seeded from `MASTER_EMAIL`, `MASTER_PASSWOR
 After one therapist account exists, public creation of extra therapist accounts is locked unless
 `THERAPIST_SIGNUP_CODE` is configured.
 
+## Portal SMS Invites
+
+Therapists can send a client an SMS link to create their portal profile. Configure Twilio in `.env`,
+or point the portal at the admin tools environment file:
+
+```bash
+PORTAL_BASE_URL=https://portal.engineeredpsychology.com
+TWILIO_ENV_FILE=/home/ec2-user/apps/admin-tools/.env
+TWILIO_ACCOUNT_SID=replace-with-account-sid
+TWILIO_AUTH_TOKEN=replace-with-auth-token
+TWILIO_FROM_NUMBER=replace-with-twilio-number
+```
+
+`TWILIO_MESSAGING_SERVICE_SID` can be used instead of `TWILIO_FROM_NUMBER`.
+
 ## Deployment Shape
 
 Recommended EC2 layout:

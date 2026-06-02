@@ -9,6 +9,37 @@
     <p>Open a client to review their profile and add session cards for their portal.</p>
   </section>
 
+  <section class="page-section split-section admin-invite-section">
+    <div>
+      <p class="eyebrow">Portal invite</p>
+      <h1>Send profile setup SMS</h1>
+      <p>Send a secure link that opens the client account creation page with their details prefilled.</p>
+      {% if not portal_invites_configured %}
+        <p class="empty-state">Twilio is not configured for this portal yet. Add Twilio settings before sending SMS invites.</p>
+      {% endif %}
+    </div>
+
+    <form class="entry-form elevated-form" method="post" action="{{ url_for('admin_send_invite_sms') }}">
+      <div class="auth-heading">
+        <p class="eyebrow">Create profile</p>
+        <h2>SMS invite</h2>
+      </div>
+      <label>
+        <span>Mobile number</span>
+        <input name="phone" inputmode="tel" autocomplete="tel" placeholder="e.g. 0412 345 678" required>
+      </label>
+      <label>
+        <span>Full name</span>
+        <input name="full_name" autocomplete="name" placeholder="Optional">
+      </label>
+      <label>
+        <span>Email</span>
+        <input type="email" name="email" autocomplete="email" placeholder="Optional">
+      </label>
+      <button class="primary-button" type="submit" {% if not portal_invites_configured %}disabled{% endif %}>Send portal invite</button>
+    </form>
+  </section>
+
   <section class="admin-list" aria-label="Client list">
     {% for client in clients %}
       <a class="panel client-row" href="{{ url_for('admin_client_detail', client_id=client.id) }}">

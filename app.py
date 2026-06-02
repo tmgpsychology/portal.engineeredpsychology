@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+import base64
 import html
 import json
+import re
 import secrets
 import sqlite3
 import smtplib
@@ -169,9 +171,16 @@ def create_app() -> Flask:
 
     @app.route("/create-account", methods=["GET", "POST"])
     def create_account():
+        invite_token = request.form.get("invite_token", "").strip() or request.args.get("invite", "").strip()
+        portal_invite = get_valid_portal_invite(invite_token) if invite_token else None
+        if request.method == "GET" and invite_token and portal_invite is None:
+            flash("That portal invite link is invalid or has expired. You can still create an account manually.", "error")
+        invite = invite_context(portal_invite, invite_token)
+
         if request.method == "POST":
             full_name = request.form.get("full_name", "").strip()
             email = request.form.get("email", "").strip().lower()
+            phone = request.form.get("phone", "").strip()
             password = request.form.get("password", "")
             confirm_password = request.form.get("confirm_password", "")
 
@@ -194,7 +203,7 @@ def create_app() -> Flask:
                             generate_password_hash(password),
                             full_name,
                             first_name(full_name),
-                            "",
+                            phone,
                             now_iso(),
                         ),
                     )
@@ -203,12 +212,14 @@ def create_app() -> Flask:
                 else:
                     client = query_one("select id from clients where email = ?", (email,))
                     if client is not None:
+                        if portal_invite is not None:
+                            mark_portal_invite_used(portal_invite["id"], client["id"])
                         session.clear()
                         session["client_id"] = client["id"]
                         record_audit(client["id"], "account_created", "Client account created")
                         return redirect(url_for("dashboard"))
 
-        return render_template("create_account.html")
+        return render_template("create_account.html", invite=invite)
 
     @app.route("/admin/login", methods=["GET", "POST"])
     def admin_login():
@@ -298,7 +309,44 @@ def create_app() -> Flask:
             order by c.full_name
             """
         )
-        return render_template("admin_clients.html", clients=clients)
+        return render_template(
+            "admin_clients.html",
+            clients=clients,
+            portal_invites_configured=twilio_sms_configured(),
+        )
+
+    @app.route("/admin/invite-sms", methods=["POST"])
+    @admin_required
+    def admin_send_invite_sms():
+        full_name = request.form.get("full_name", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        phone = request.form.get("phone", "").strip()
+        normalized_phone = normalize_phone_number(phone)
+
+        if not normalized_phone:
+            flash("Add a mobile number before sending the portal invite.", "error")
+            return redirect(url_for("admin_clients"))
+        if not twilio_sms_configured():
+            flash("Twilio is not configured for this portal yet.", "error")
+            return redirect(url_for("admin_clients"))
+
+        invite_token = create_portal_invite(full_name, email, normalized_phone)
+        invite_url = build_create_account_url(invite_token)
+        message = build_portal_invite_sms(full_name, invite_url)
+
+        try:
+            _from_number, message_sid = send_twilio_sms(normalized_phone, message)
+        except Exception as exc:
+            from flask import current_app
+
+            current_app.logger.exception("Failed to send portal invite SMS: %s", exc)
+            flash("Portal invite SMS could not be sent. Check the Twilio settings.", "error")
+        else:
+            detail_name = full_name or email or normalized_phone
+            record_audit(None, "portal_invite_sms_sent", f"Sent portal invite to {detail_name}: {message_sid}")
+            flash("Portal invite SMS sent.", "success")
+
+        return redirect(url_for("admin_clients"))
 
     @app.route("/admin/clients/<int:client_id>")
     @admin_required
@@ -760,6 +808,140 @@ def send_smtp_email(to_email: str, subject: str, body: str) -> bool:
     return True
 
 
+def twilio_sms_configured() -> bool:
+    return bool(get_setting("TWILIO_ACCOUNT_SID") and get_setting("TWILIO_AUTH_TOKEN") and get_twilio_sender())
+
+
+def get_twilio_sender() -> str:
+    return get_setting("TWILIO_FROM_NUMBER") or get_setting("TWILIO_MESSAGING_SERVICE_SID")
+
+
+def send_twilio_sms(to_number: str, body: str) -> tuple[str, str]:
+    twilio_sid = get_setting("TWILIO_ACCOUNT_SID")
+    twilio_token = get_setting("TWILIO_AUTH_TOKEN")
+    twilio_sender = get_twilio_sender()
+    if not twilio_sid or not twilio_token or not twilio_sender:
+        raise RuntimeError("Twilio credentials are missing")
+
+    payload = {
+        "To": to_number,
+        "Body": body,
+    }
+    if twilio_sender.startswith("MG"):
+        payload["MessagingServiceSid"] = twilio_sender
+    else:
+        payload["From"] = twilio_sender
+
+    req = UrlRequest(
+        f"https://api.twilio.com/2010-04-01/Accounts/{twilio_sid}/Messages.json",
+        data=urlencode(payload).encode("utf-8"),
+        method="POST",
+        headers={
+            "Authorization": "Basic "
+            + base64.b64encode(f"{twilio_sid}:{twilio_token}".encode("utf-8")).decode("ascii"),
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+    )
+    try:
+        with urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except HTTPError as exc:
+        response_body = exc.read().decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"Twilio request failed: HTTP {exc.code} {response_body}") from exc
+
+    return twilio_sender, str(data.get("sid", ""))
+
+
+def normalize_phone_number(phone_number: str) -> str:
+    raw_value = str(phone_number or "").strip()
+    digits = re.sub(r"\D+", "", raw_value)
+    if not digits:
+        return ""
+    if raw_value.startswith("+"):
+        return "+" + digits
+    if digits.startswith("61") and len(digits) == 11:
+        return "+" + digits
+    if digits.startswith("04") and len(digits) == 10:
+        return "+61" + digits[1:]
+    if digits.startswith("4") and len(digits) == 9:
+        return "+61" + digits
+    return digits
+
+
+def create_portal_invite(full_name: str, email: str, phone: str) -> str:
+    token = secrets.token_urlsafe(32)
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=14)).isoformat(timespec="seconds")
+    execute(
+        """
+        insert into portal_invites
+            (token_hash, full_name, email, phone, expires_at, created_at, used_at, used_client_id)
+        values (?, ?, ?, ?, ?, ?, null, null)
+        """,
+        (hash_reset_token(token), full_name, email, phone, expires_at, now_iso()),
+    )
+    return token
+
+
+def get_valid_portal_invite(token: str) -> sqlite3.Row | None:
+    if not token:
+        return None
+    invite = query_one(
+        """
+        select id, full_name, email, phone, expires_at
+        from portal_invites
+        where token_hash = ? and used_at is null
+        """,
+        (hash_reset_token(token),),
+    )
+    if invite is None:
+        return None
+
+    try:
+        expires_at = datetime.fromisoformat(invite["expires_at"])
+    except ValueError:
+        return None
+
+    if expires_at <= datetime.now(timezone.utc):
+        execute("update portal_invites set used_at = ? where id = ?", (now_iso(), invite["id"]))
+        return None
+    return invite
+
+
+def mark_portal_invite_used(invite_id: int, client_id: int) -> None:
+    execute(
+        "update portal_invites set used_at = ?, used_client_id = ? where id = ?",
+        (now_iso(), client_id, invite_id),
+    )
+
+
+def invite_context(invite: sqlite3.Row | None, token: str) -> dict[str, str]:
+    if invite is None:
+        return {"full_name": "", "email": "", "phone": "", "token": ""}
+    return {
+        "full_name": str(invite["full_name"] or ""),
+        "email": str(invite["email"] or ""),
+        "phone": str(invite["phone"] or ""),
+        "token": token,
+    }
+
+
+def build_create_account_url(invite_token: str) -> str:
+    base_url = get_setting("PORTAL_BASE_URL").rstrip("/")
+    params = {"invite": invite_token}
+    if base_url:
+        path = url_for("create_account")
+        return f"{base_url}{path}?{urlencode(params)}"
+    return url_for("create_account", _external=True, **params)
+
+
+def build_portal_invite_sms(full_name: str, invite_url: str) -> str:
+    greeting_name = first_name(full_name) or "there"
+    return (
+        f"Hi {greeting_name}, Travis from TMG Psychology has set up your Engineered Psychology "
+        f"client portal. Create your profile here: {invite_url}"
+    )
+
+
 def get_setting(name: str, default: str = "") -> str:
     value = os.environ.get(name, "").strip()
     if value:
@@ -775,12 +957,17 @@ def get_setting(name: str, default: str = "") -> str:
 
 def get_extra_env_paths() -> list[Path]:
     paths = []
-    configured = os.environ.get("GRAPH_ENV_FILE", "").strip() or os.environ.get(
-        "MICROSOFT_GRAPH_ENV_FILE", ""
-    ).strip()
-    if configured:
-        paths.append(Path(configured).expanduser())
+    for env_name in (
+        "PORTAL_EXTRA_ENV_FILE",
+        "TWILIO_ENV_FILE",
+        "GRAPH_ENV_FILE",
+        "MICROSOFT_GRAPH_ENV_FILE",
+    ):
+        configured = os.environ.get(env_name, "").strip()
+        if configured:
+            paths.append(Path(configured).expanduser())
     paths.append(BASE_DIR / ".env")
+    paths.append(BASE_DIR.parent / "admin.engineeredpsychology repo" / "admin-tools" / ".env")
     return paths
 
 
@@ -1009,10 +1196,24 @@ def init_db(app: Flask) -> None:
                 used_at text
             );
 
+            create table if not exists portal_invites (
+                id integer primary key autoincrement,
+                token_hash text not null unique,
+                full_name text,
+                email text,
+                phone text,
+                expires_at text not null,
+                created_at text not null,
+                used_at text,
+                used_client_id integer references clients(id)
+            );
+
             create index if not exists idx_password_reset_tokens_client
                 on password_reset_tokens(client_id);
             create index if not exists idx_password_reset_tokens_token_hash
                 on password_reset_tokens(token_hash);
+            create index if not exists idx_portal_invites_token_hash
+                on portal_invites(token_hash);
             create index if not exists idx_session_reflections_session
                 on session_reflections(session_id);
             create index if not exists idx_client_skill_reflections_skill

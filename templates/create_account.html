@@ -12,17 +12,24 @@
 
     <div class="auth-stack">
       <form class="auth-panel" method="post" action="{{ url_for('create_account') }}">
+        {% if invite.token %}
+          <input type="hidden" name="invite_token" value="{{ invite.token }}">
+        {% endif %}
         <div class="auth-heading">
           <p class="eyebrow">New account</p>
           <h2>Create account</h2>
         </div>
         <label>
           <span>Full name</span>
-          <input name="full_name" autocomplete="name" required>
+          <input name="full_name" value="{{ invite.full_name or '' }}" autocomplete="name" required>
         </label>
         <label>
           <span>Email</span>
-          <input type="email" name="email" autocomplete="email" required>
+          <input type="email" name="email" value="{{ invite.email or '' }}" autocomplete="email" required>
+        </label>
+        <label>
+          <span>Mobile</span>
+          <input name="phone" value="{{ invite.phone or '' }}" inputmode="tel" autocomplete="tel">
         </label>
         <label>
           <span>Password</span>

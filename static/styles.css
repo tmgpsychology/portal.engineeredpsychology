@@ -350,6 +350,13 @@ textarea:focus {
   background: var(--accent-strong);
 }
 
+.primary-button:disabled {
+  background: var(--line);
+  color: var(--muted);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
 body.portal-client .primary-button {
   background: linear-gradient(135deg, var(--accent), var(--brand-teal-deep));
   box-shadow: inset 0 -3px 0 rgba(5, 12, 10, 0.16);
@@ -357,6 +364,12 @@ body.portal-client .primary-button {
 
 body.portal-client .primary-button:hover {
   background: linear-gradient(135deg, var(--brand-teal-deep), #0b3f47);
+}
+
+body.portal-client .primary-button:disabled {
+  background: var(--line);
+  color: var(--muted);
+  box-shadow: none;
 }
 
 .secondary-button {
