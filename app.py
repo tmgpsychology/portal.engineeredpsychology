@@ -396,7 +396,13 @@ def create_app() -> Flask:
         )
         skill_reflections = query_all(
             """
-            select csr.skill_id, csr.reflection_text, csr.practiced_at, csr.created_at, cs.title as skill_title
+            select
+                csr.skill_id,
+                csr.reflection_text,
+                csr.practiced_at,
+                csr.created_at,
+                csr.author_role,
+                cs.title as skill_title
             from client_skill_reflections csr
             join client_skills cs on cs.id = csr.skill_id
             where csr.client_id = ?
@@ -469,8 +475,36 @@ def create_app() -> Flask:
                 category or "Strategy",
                 therapist_plan,
                 saved_date,
+                "therapist",
             )
             flash("Skill or strategy saved for the client portal.", "success")
+        return redirect(url_for("admin_client_detail", client_id=client_id))
+
+    @app.route("/admin/clients/<int:client_id>/skills/<int:skill_id>/reflections", methods=["POST"])
+    @admin_required
+    def admin_add_skill_reflection(client_id: int, skill_id: int):
+        client = get_client_or_404(client_id)
+        skill = query_one(
+            "select id from client_skills where id = ? and client_id = ?",
+            (skill_id, client["id"]),
+        )
+        if skill is None:
+            abort(404)
+
+        reflection_text = request.form.get("reflection_text", "").strip()
+        practiced_at = request.form.get("practiced_at", "").strip() or datetime.now().date().isoformat()
+        if not reflection_text:
+            flash("Write a therapist plan or feedback note before saving.", "error")
+        else:
+            add_skill_reflection_for_client(
+                client["id"],
+                skill_id,
+                reflection_text,
+                practiced_at,
+                "therapist",
+            )
+            record_audit(client["id"], "skill_reflection_added", "Therapist added skill plan or feedback")
+            flash("Therapist plan or feedback saved.", "success")
         return redirect(url_for("admin_client_detail", client_id=client_id))
 
     @app.route("/logout", methods=["POST"])
@@ -503,15 +537,16 @@ def create_app() -> Flask:
                 execute(
                     """
                     insert into client_skills
-                        (client_id, title, category, notes, practiced_at, created_at)
-                    values (?, ?, ?, ?, ?, ?)
+                        (client_id, title, category, notes, practiced_at, author_role, created_at)
+                    values (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         g.client["id"],
                         title,
-                        category or "Session skill",
+                        category or "Strategy",
                         notes,
                         practiced_at or datetime.now().date().isoformat(),
+                        "client",
                         now_iso(),
                     ),
                 )
@@ -536,13 +571,12 @@ def create_app() -> Flask:
         if not reflection_text:
             flash("Write a plan or feedback note before saving.", "error")
         else:
-            execute(
-                """
-                insert into client_skill_reflections
-                    (client_id, skill_id, reflection_text, practiced_at, created_at)
-                values (?, ?, ?, ?, ?)
-                """,
-                (g.client["id"], skill_id, reflection_text, practiced_at, now_iso()),
+            add_skill_reflection_for_client(
+                g.client["id"],
+                skill_id,
+                reflection_text,
+                practiced_at,
+                "client",
             )
             record_audit(g.client["id"], "skill_reflection_added", "Client added skill plan or feedback")
             flash("Plan or feedback saved.", "success")
@@ -1295,47 +1329,64 @@ def add_skill_for_client(
     category: str,
     notes: str,
     practiced_at: str,
+    author_role: str = "therapist",
 ) -> None:
     execute(
         """
-        insert into client_skills (client_id, title, category, notes, practiced_at, created_at)
-        values (?, ?, ?, ?, ?, ?)
+        insert into client_skills (client_id, title, category, notes, practiced_at, author_role, created_at)
+        values (?, ?, ?, ?, ?, ?, ?)
         """,
-        (client_id, title, category, notes, practiced_at, now_iso()),
+        (client_id, title, category, notes, practiced_at, author_role, now_iso()),
     )
     record_audit(client_id, "skill_added", f"Added skill: {title}")
 
 
-def get_client_skills_with_latest_reflection(client_id: int) -> list[sqlite3.Row]:
-    return query_all(
+def add_skill_reflection_for_client(
+    client_id: int,
+    skill_id: int,
+    reflection_text: str,
+    practiced_at: str,
+    author_role: str,
+) -> None:
+    execute(
         """
-        select
-            cs.id,
-            cs.title,
-            cs.category,
-            cs.notes,
-            cs.practiced_at,
-            cs.created_at,
-            latest_reflection.reflection_text,
-            latest_reflection.practiced_at as reflection_practiced_at,
-            latest_reflection.created_at as reflection_created_at
+        insert into client_skill_reflections
+            (client_id, skill_id, reflection_text, practiced_at, author_role, created_at)
+        values (?, ?, ?, ?, ?, ?)
+        """,
+        (client_id, skill_id, reflection_text, practiced_at, author_role, now_iso()),
+    )
+
+
+def get_client_skills_with_latest_reflection(client_id: int) -> list[dict]:
+    skill_rows = query_all(
+        """
+        select id, title, category, notes, practiced_at, author_role, created_at
         from client_skills cs
-        left join (
-            select csr.skill_id, csr.reflection_text, csr.practiced_at, csr.created_at
-            from client_skill_reflections csr
-            join (
-                select skill_id, max(created_at) as latest_created_at
-                from client_skill_reflections
-                where client_id = ?
-                group by skill_id
-            ) latest on latest.skill_id = csr.skill_id and latest.latest_created_at = csr.created_at
-            where csr.client_id = ?
-        ) latest_reflection on latest_reflection.skill_id = cs.id
         where cs.client_id = ?
         order by cs.practiced_at desc, cs.created_at desc
         """,
-        (client_id, client_id, client_id),
+        (client_id,),
     )
+    reflection_rows = query_all(
+        """
+        select id, skill_id, reflection_text, practiced_at, author_role, created_at
+        from client_skill_reflections
+        where client_id = ?
+        order by practiced_at desc, created_at desc
+        """,
+        (client_id,),
+    )
+    reflections_by_skill: dict[int, list[dict]] = {}
+    for row in reflection_rows:
+        reflections_by_skill.setdefault(int(row["skill_id"]), []).append(dict(row))
+
+    skills = []
+    for row in skill_rows:
+        skill = dict(row)
+        skill["reflections"] = reflections_by_skill.get(int(row["id"]), [])
+        skills.append(skill)
+    return skills
 
 
 def add_session_for_client(
@@ -1395,6 +1446,7 @@ def init_db(app: Flask) -> None:
                 category text not null,
                 notes text,
                 practiced_at text not null,
+                author_role text not null default 'therapist',
                 created_at text not null
             );
 
@@ -1423,6 +1475,7 @@ def init_db(app: Flask) -> None:
                 skill_id integer not null references client_skills(id),
                 reflection_text text not null,
                 practiced_at text not null,
+                author_role text not null default 'client',
                 created_at text not null
             );
 
@@ -1484,10 +1537,18 @@ def init_db(app: Flask) -> None:
                 on client_skill_reflections(skill_id);
             """
         )
+        ensure_column_exists(db, "client_skills", "author_role", "text not null default 'therapist'")
+        ensure_column_exists(db, "client_skill_reflections", "author_role", "text not null default 'client'")
         db.commit()
         seed_demo_data()
         ensure_demo_session_data()
         ensure_master_account()
+
+
+def ensure_column_exists(db: sqlite3.Connection, table_name: str, column_name: str, definition: str) -> None:
+    columns = {row["name"] for row in db.execute(f"pragma table_info({table_name})").fetchall()}
+    if column_name not in columns:
+        db.execute(f"alter table {table_name} add column {column_name} {definition}")
 
 
 def seed_demo_data() -> None:
@@ -1518,8 +1579,8 @@ def seed_demo_data() -> None:
     client_id = client["id"]
     execute(
         """
-        insert into client_skills (client_id, title, category, notes, practiced_at, created_at)
-        values (?, ?, ?, ?, ?, ?)
+        insert into client_skills (client_id, title, category, notes, practiced_at, author_role, created_at)
+        values (?, ?, ?, ?, ?, ?, ?)
         """,
         (
             client_id,
@@ -1527,6 +1588,7 @@ def seed_demo_data() -> None:
             "Regulation",
             "Notice five things you can see, four you can feel, three you can hear, two you can smell, and one you can taste.",
             datetime.now().date().isoformat(),
+            "therapist",
             created_at,
         ),
     )

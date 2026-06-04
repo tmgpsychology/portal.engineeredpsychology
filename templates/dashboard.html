@@ -14,24 +14,28 @@
   <section class="skill-list" aria-label="Skills and strategies">
     {% for skill in skills %}
       <article class="panel skill-card">
-        <div>
+        <div class="skill-origin {{ skill.author_role }}-text">
           <p class="eyebrow">{{ skill.category }}</p>
           <h2>{{ skill.title }}</h2>
           <small>{{ skill.practiced_at }}</small>
         </div>
         {% if skill.notes %}
-          <div class="next-steps">
-            <strong>Therapist plan</strong>
+          <div class="entry-note {{ skill.author_role }}-entry">
+            <strong>{{ "Therapist plan" if skill.author_role == "therapist" else "Client plan" }}</strong>
             <p>{{ skill.notes }}</p>
           </div>
         {% endif %}
-        {% if skill.reflection_text %}
-          <div class="client-reflection">
-            <span>Latest plan or feedback{% if skill.reflection_practiced_at %} · {{ skill.reflection_practiced_at }}{% endif %}</span>
-            <p>{{ skill.reflection_text }}</p>
+        {% if skill.reflections %}
+          <div class="entry-list">
+            {% for reflection in skill.reflections %}
+              <div class="entry-note {{ reflection.author_role }}-entry">
+                <strong>{{ "Therapist" if reflection.author_role == "therapist" else "Client" }} plan or feedback{% if reflection.practiced_at %} · {{ reflection.practiced_at }}{% endif %}</strong>
+                <p>{{ reflection.reflection_text }}</p>
+              </div>
+            {% endfor %}
           </div>
         {% endif %}
-        <form class="reflection-form" method="post" action="{{ url_for('add_skill_reflection', skill_id=skill.id) }}">
+        <form class="reflection-form client-entry-form" method="post" action="{{ url_for('add_skill_reflection', skill_id=skill.id) }}">
           <input type="hidden" name="next" value="{{ request.path }}">
           <label>
             <span>Your plan or feedback for this skill</span>

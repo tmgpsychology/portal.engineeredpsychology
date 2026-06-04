@@ -19,6 +19,10 @@
   --panel-warm: #fff7ec;
   --accent: var(--brand-teal);
   --accent-strong: var(--brand-teal-deep);
+  --client-blue: #155cc4;
+  --client-blue-soft: #eaf3ff;
+  --therapist-red: #b8332f;
+  --therapist-red-soft: #fff0ed;
   --warn: #b44b2d;
   --shadow: 0 22px 60px rgba(5, 12, 10, 0.34);
   --shadow-soft: 0 10px 28px rgba(5, 12, 10, 0.18);
@@ -613,6 +617,20 @@ body.portal-client .timeline-row > span {
   color: var(--muted);
 }
 
+.client-text,
+.client-text .eyebrow,
+.client-text h2,
+.client-text small {
+  color: var(--client-blue);
+}
+
+.therapist-text,
+.therapist-text .eyebrow,
+.therapist-text h2,
+.therapist-text small {
+  color: var(--therapist-red);
+}
+
 .skill-card p:last-child {
   margin: 0;
   color: var(--muted);
@@ -681,6 +699,70 @@ body.portal-client .chip:nth-child(3n) {
   border-radius: 8px;
   border-left: 4px solid var(--brand-lavender);
   background: linear-gradient(90deg, #f0f1fb, var(--panel-soft));
+}
+
+.entry-list {
+  display: grid;
+  gap: 10px;
+}
+
+.entry-note {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 8px;
+}
+
+.entry-note strong {
+  font-size: 0.86rem;
+  font-weight: 850;
+}
+
+.entry-note p,
+.skill-card .entry-note p,
+.session-card .entry-note p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.client-entry {
+  border-left: 4px solid var(--client-blue);
+  background: var(--client-blue-soft);
+  color: var(--client-blue);
+}
+
+.client-entry strong,
+.client-entry p,
+.skill-card .client-entry p,
+.session-card .client-entry p {
+  color: var(--client-blue);
+}
+
+.therapist-entry {
+  border-left: 4px solid var(--therapist-red);
+  background: var(--therapist-red-soft);
+  color: var(--therapist-red);
+}
+
+.therapist-entry strong,
+.therapist-entry p,
+.skill-card .therapist-entry p,
+.session-card .therapist-entry p {
+  color: var(--therapist-red);
+}
+
+.client-entry-form textarea,
+.client-entry-form input[name="title"],
+.client-entry-form input[name="category"],
+.client-entry-form input[name="notes"] {
+  color: var(--client-blue);
+}
+
+.therapist-entry-form textarea,
+.therapist-entry-form input[name="title"],
+.therapist-entry-form input[name="category"],
+.therapist-entry-form input[name="therapist_plan"] {
+  color: var(--therapist-red);
 }
 
 .client-reflection {

@@ -23,7 +23,7 @@
       </div>
     </div>
 
-    <form class="entry-form elevated-form" method="post" action="{{ url_for('admin_add_session', client_id=client.id) }}">
+    <form class="entry-form elevated-form therapist-entry-form" method="post" action="{{ url_for('admin_add_session', client_id=client.id) }}">
       <div class="auth-heading">
         <p class="eyebrow">Add to portal</p>
         <h2>Skill or strategy</h2>
@@ -115,23 +115,38 @@
   <section class="skill-list" aria-label="Skills and strategies">
     {% for skill in skills %}
       <article class="panel skill-card">
-        <div>
+        <div class="skill-origin {{ skill.author_role }}-text">
           <p class="eyebrow">{{ skill.category }}</p>
           <h2>{{ skill.title }}</h2>
           <small>{{ skill.practiced_at }}</small>
         </div>
         {% if skill.notes %}
-          <div class="next-steps">
-            <strong>Therapist plan</strong>
+          <div class="entry-note {{ skill.author_role }}-entry">
+            <strong>{{ "Therapist plan" if skill.author_role == "therapist" else "Client plan" }}</strong>
             <p>{{ skill.notes }}</p>
           </div>
         {% endif %}
-        {% if skill.reflection_text %}
-          <div class="client-reflection">
-            <span>Client plan or feedback{% if skill.reflection_practiced_at %} · {{ skill.reflection_practiced_at }}{% endif %}</span>
-            <p>{{ skill.reflection_text }}</p>
+        {% if skill.reflections %}
+          <div class="entry-list">
+            {% for reflection in skill.reflections %}
+              <div class="entry-note {{ reflection.author_role }}-entry">
+                <strong>{{ "Therapist" if reflection.author_role == "therapist" else "Client" }} plan or feedback{% if reflection.practiced_at %} · {{ reflection.practiced_at }}{% endif %}</strong>
+                <p>{{ reflection.reflection_text }}</p>
+              </div>
+            {% endfor %}
           </div>
         {% endif %}
+        <form class="reflection-form therapist-entry-form" method="post" action="{{ url_for('admin_add_skill_reflection', client_id=client.id, skill_id=skill.id) }}">
+          <label>
+            <span>Therapist plan or feedback for this skill</span>
+            <textarea name="reflection_text" rows="4" placeholder="Add a plan, adjustment, observation, or response for the client."></textarea>
+          </label>
+          <label>
+            <span>Date</span>
+            <input type="date" name="practiced_at">
+          </label>
+          <button class="secondary-button" type="submit">Save therapist entry</button>
+        </form>
       </article>
     {% else %}
       <article class="panel">
