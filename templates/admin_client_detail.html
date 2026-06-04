@@ -26,93 +26,116 @@
     <form class="entry-form elevated-form" method="post" action="{{ url_for('admin_add_session', client_id=client.id) }}">
       <div class="auth-heading">
         <p class="eyebrow">Add to portal</p>
-        <h2>Session card</h2>
+        <h2>Skill or strategy</h2>
       </div>
       <div class="form-row">
         <label>
-          <span>Session date</span>
+          <span>Date discussed</span>
           <input type="date" name="session_date">
         </label>
         <label>
-          <span>Session title</span>
-          <input name="title" placeholder="e.g. Building regulation skills" required>
+          <span>Skill or strategy</span>
+          <input name="title" placeholder="e.g. Box breathing" required>
         </label>
       </div>
       <label>
-        <span>What happened in session</span>
-        <textarea name="summary" rows="4" placeholder="Client-facing summary of themes, practice, or progress."></textarea>
+        <span>Type or category</span>
+        <input name="category" placeholder="e.g. Regulation, grounding, communication">
       </label>
       <label>
-        <span>Skills and interventions</span>
-        <textarea name="key_skills" rows="4" placeholder="One item per line."></textarea>
+        <span>Therapist plan</span>
+        <textarea name="therapist_plan" rows="5" placeholder="When to use it, how to practise it, and what feedback would be useful next session."></textarea>
       </label>
-      <label>
-        <span>Between-session focus</span>
-        <textarea name="next_steps" rows="3" placeholder="Practice task or reminder before next session."></textarea>
-      </label>
-      <button class="primary-button" type="submit">Save session card</button>
+      <button class="primary-button" type="submit">Save skill or strategy</button>
     </form>
   </section>
 
-  <section class="session-list" aria-label="Session cards">
-    {% for session in sessions %}
-      <article class="panel session-card">
-        <div class="session-meta">
-          <span>{{ session.session_date }}</span>
-          <h2>{{ session.title }}</h2>
-        </div>
-        {% if session.summary %}
-          <p>{{ session.summary }}</p>
-        {% endif %}
-        {% if session.key_skills %}
-          <div>
-            <strong>Skills and interventions</strong>
-            <div class="chip-row">
-              {% for skill in session.key_skills.splitlines() %}
-                {% if skill.strip() %}
-                  <span class="chip">{{ skill.strip() }}</span>
-                {% endif %}
-              {% endfor %}
-            </div>
-          </div>
-        {% endif %}
-        {% if session.next_steps %}
-          <div class="next-steps">
-            <strong>Between-session focus</strong>
-            <p>{{ session.next_steps }}</p>
-          </div>
-        {% endif %}
-        {% if session.client_reflection %}
-          <div class="client-reflection">
-            <span>Client session note{% if session.client_reflection_created_at %} · {{ session.client_reflection_created_at[:10] }}{% endif %}</span>
-            <p>{{ session.client_reflection }}</p>
-          </div>
-        {% endif %}
-      </article>
-    {% else %}
-      <article class="panel">
-        <p class="empty-state">No sessions added yet.</p>
-      </article>
-    {% endfor %}
+  <section class="page-section split-section">
+    <div>
+      <p class="eyebrow">SMS reminders</p>
+      <h1>Portal reminder schedule</h1>
+      <p>Send this client recurring SMS reminders with a link to the portal page you choose.</p>
+      {% if not client.phone %}
+        <p class="empty-state">Add a mobile number to this client before enabling SMS reminders.</p>
+      {% elif not portal_reminders_configured %}
+        <p class="empty-state">Twilio is not configured for this portal yet. Reminder schedules can be saved once SMS settings are available.</p>
+      {% endif %}
+    </div>
+
+    <form class="entry-form elevated-form" method="post" action="{{ url_for('admin_update_reminder_schedule', client_id=client.id) }}">
+      <div class="auth-heading">
+        <p class="eyebrow">Client reminders</p>
+        <h2>SMS schedule</h2>
+      </div>
+      <label class="checkbox-row">
+        <input type="checkbox" name="enabled" {% if reminder_schedule and reminder_schedule.enabled %}checked{% endif %}>
+        <span>Enable reminders for this client</span>
+      </label>
+      <div class="form-row">
+        <label>
+          <span>Every</span>
+          <select name="frequency_days">
+            {% set selected_frequency = reminder_schedule.frequency_days if reminder_schedule else 1 %}
+            <option value="1" {% if selected_frequency == 1 %}selected{% endif %}>Daily</option>
+            <option value="2" {% if selected_frequency == 2 %}selected{% endif %}>Every 2 days</option>
+            <option value="3" {% if selected_frequency == 3 %}selected{% endif %}>Every 3 days</option>
+            <option value="7" {% if selected_frequency == 7 %}selected{% endif %}>Weekly</option>
+          </select>
+        </label>
+        <label>
+          <span>Send time</span>
+          <input type="time" name="send_time_local" value="{{ reminder_schedule.send_time_local if reminder_schedule else '09:00' }}" required>
+        </label>
+      </div>
+      <label>
+        <span>Link to page</span>
+        <select name="target_path">
+          {% set selected_target = reminder_schedule.target_path if reminder_schedule else '/sessions' %}
+          {% for path, label in reminder_target_options %}
+            <option value="{{ path }}" {% if selected_target == path %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>SMS message</span>
+        <textarea name="message_template" rows="4">{{ reminder_schedule.message_template if reminder_schedule else "Hi {first_name}, this is a reminder from TMG Psychology to add any notes, reflections, or practice updates to your Engineered Psychology portal: {link}" }}</textarea>
+      </label>
+      <button class="primary-button" type="submit">Save reminder schedule</button>
+      {% if reminder_schedule %}
+        <p class="auth-secondary">Next SMS: {{ reminder_schedule.next_send_at }}</p>
+      {% endif %}
+    </form>
   </section>
 
   <section class="page-section">
-    <p class="eyebrow">Client reflections</p>
-    <h1>Skill practice notes</h1>
+    <p class="eyebrow">Client portal</p>
+    <h1>Skills and strategies</h1>
   </section>
 
-  <section class="session-list" aria-label="Skill practice notes">
-    {% for reflection in skill_reflections %}
-      <article class="panel compact">
-        <div class="session-meta">
-          <span>{{ reflection.practiced_at }}</span>
-          <h2>{{ reflection.skill_title }}</h2>
+  <section class="skill-list" aria-label="Skills and strategies">
+    {% for skill in skills %}
+      <article class="panel skill-card">
+        <div>
+          <p class="eyebrow">{{ skill.category }}</p>
+          <h2>{{ skill.title }}</h2>
+          <small>{{ skill.practiced_at }}</small>
         </div>
-        <p>{{ reflection.reflection_text }}</p>
+        {% if skill.notes %}
+          <div class="next-steps">
+            <strong>Therapist plan</strong>
+            <p>{{ skill.notes }}</p>
+          </div>
+        {% endif %}
+        {% if skill.reflection_text %}
+          <div class="client-reflection">
+            <span>Client plan or feedback{% if skill.reflection_practiced_at %} · {{ skill.reflection_practiced_at }}{% endif %}</span>
+            <p>{{ skill.reflection_text }}</p>
+          </div>
+        {% endif %}
       </article>
     {% else %}
       <article class="panel">
-        <p class="empty-state">No client skill reflections yet.</p>
+        <p class="empty-state">No skills or strategies added yet.</p>
       </article>
     {% endfor %}
   </section>

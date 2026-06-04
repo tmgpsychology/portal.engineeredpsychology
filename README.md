@@ -93,6 +93,19 @@ TWILIO_FROM_NUMBER=replace-with-twilio-number
 
 `TWILIO_MESSAGING_SERVICE_SID` can be used instead of `TWILIO_FROM_NUMBER`.
 
+## Portal SMS Reminders
+
+Therapists can set a per-client reminder schedule from the client detail page in the admin portal.
+Reminder SMS messages include a link to the selected portal page and are dispatched by:
+
+```bash
+python app.py dispatch-reminders
+```
+
+Recommended production setup is the systemd timer in `deploy/portal-reminders-dispatch.timer`,
+which runs the dispatcher every five minutes. Reminder times are interpreted in
+`PORTAL_REMINDER_TIMEZONE`, defaulting to `Australia/Sydney`.
+
 ## Deployment Shape
 
 Recommended EC2 layout:

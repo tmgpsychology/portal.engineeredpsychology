@@ -8,6 +8,7 @@ import re
 import secrets
 import sqlite3
 import smtplib
+import sys
 from email.message import EmailMessage
 from hashlib import sha256
 from datetime import datetime, timedelta, timezone
@@ -17,6 +18,7 @@ from urllib.error import HTTPError
 from urllib.parse import quote_plus, urlencode
 from urllib.request import Request as UrlRequest
 from urllib.request import urlopen
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from flask import (
@@ -36,6 +38,17 @@ from werkzeug.security import check_password_hash, generate_password_hash
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 ENV_FILE_CACHE: dict[Path, dict[str, str]] = {}
+DEFAULT_TIMEZONE = "Australia/Sydney"
+DEFAULT_REMINDER_MESSAGE = (
+    "Hi {first_name}, this is a reminder from TMG Psychology to add any notes, "
+    "reflections, or practice updates to your Engineered Psychology portal: {link}"
+)
+REMINDER_TARGET_OPTIONS = (
+    ("/sessions", "Sessions and session notes"),
+    ("/skills", "Skills and practice notes"),
+    ("/profile", "Profile"),
+    ("/dashboard", "Dashboard"),
+)
 
 
 def create_app() -> Flask:
@@ -94,7 +107,7 @@ def create_app() -> Flask:
             session.permanent = request.form.get("remember_device") == "on"
             session["client_id"] = client["id"]
             record_audit(client["id"], "login", "Client signed in")
-            return redirect(url_for("dashboard"))
+            return redirect(get_safe_next_url() or url_for("dashboard"))
 
         return render_template("login.html")
 
@@ -391,29 +404,73 @@ def create_app() -> Flask:
             """,
             (client_id,),
         )
+        reminder_schedule = get_portal_reminder_schedule(client_id)
         return render_template(
             "admin_client_detail.html",
             client=client,
             sessions=sessions,
+            skills=get_client_skills_with_latest_reflection(client_id),
             skill_reflections=skill_reflections,
+            reminder_schedule=reminder_schedule,
+            reminder_target_options=REMINDER_TARGET_OPTIONS,
+            portal_reminders_configured=twilio_sms_configured(),
         )
+
+    @app.route("/admin/clients/<int:client_id>/reminder-schedule", methods=["POST"])
+    @admin_required
+    def admin_update_reminder_schedule(client_id: int):
+        client = get_client_or_404(client_id)
+        enabled = request.form.get("enabled") == "on"
+        frequency_days = parse_positive_int(request.form.get("frequency_days"), default=1, maximum=30)
+        send_time_local = request.form.get("send_time_local", "").strip()
+        target_path = request.form.get("target_path", "").strip()
+        message_template = request.form.get("message_template", "").strip()
+
+        if enabled and not normalize_phone_number(client["phone"]):
+            flash("Add a mobile number to this client before enabling SMS reminders.", "error")
+            return redirect(url_for("admin_client_detail", client_id=client_id))
+        if enabled and not twilio_sms_configured():
+            flash("Twilio is not configured for this portal yet.", "error")
+            return redirect(url_for("admin_client_detail", client_id=client_id))
+        if not valid_local_time(send_time_local):
+            flash("Choose a valid reminder time.", "error")
+            return redirect(url_for("admin_client_detail", client_id=client_id))
+        if target_path not in dict(REMINDER_TARGET_OPTIONS):
+            flash("Choose a valid reminder page.", "error")
+            return redirect(url_for("admin_client_detail", client_id=client_id))
+
+        save_portal_reminder_schedule(
+            client_id=client["id"],
+            enabled=enabled,
+            frequency_days=frequency_days,
+            send_time_local=send_time_local,
+            target_path=target_path,
+            message_template=message_template,
+        )
+        flash("Portal SMS reminder schedule saved.", "success")
+        return redirect(url_for("admin_client_detail", client_id=client_id))
 
     @app.route("/admin/clients/<int:client_id>/sessions", methods=["POST"])
     @admin_required
     def admin_add_session(client_id: int):
         client = get_client_or_404(client_id)
-        session_date = request.form.get("session_date", "").strip()
+        discussed_at = request.form.get("session_date", "").strip()
         title = request.form.get("title", "").strip()
-        summary = request.form.get("summary", "").strip()
-        key_skills = request.form.get("key_skills", "").strip()
-        next_steps = request.form.get("next_steps", "").strip()
+        category = request.form.get("category", "").strip()
+        therapist_plan = request.form.get("therapist_plan", "").strip()
 
         if not title:
-            flash("Add a session title before saving.", "error")
+            flash("Add a skill or strategy name before saving.", "error")
         else:
-            saved_date = session_date or datetime.now().date().isoformat()
-            add_session_for_client(client["id"], saved_date, title, summary, key_skills, next_steps)
-            flash("Session saved for the client portal.", "success")
+            saved_date = discussed_at or datetime.now().date().isoformat()
+            add_skill_for_client(
+                client["id"],
+                title,
+                category or "Strategy",
+                therapist_plan,
+                saved_date,
+            )
+            flash("Skill or strategy saved for the client portal.", "success")
         return redirect(url_for("admin_client_detail", client_id=client_id))
 
     @app.route("/logout", methods=["POST"])
@@ -426,18 +483,9 @@ def create_app() -> Flask:
     @app.route("/dashboard")
     @login_required
     def dashboard():
-        sessions = query_all(
-            """
-            select session_date, title, summary, key_skills, next_steps
-            from therapy_sessions
-            where client_id = ?
-            order by session_date desc, created_at desc
-            """,
-            (g.client["id"],),
-        )
         return render_template(
             "dashboard.html",
-            sessions=sessions,
+            skills=get_client_skills_with_latest_reflection(g.client["id"]),
         )
 
     @app.route("/skills", methods=["GET", "POST"])
@@ -471,36 +519,7 @@ def create_app() -> Flask:
                 flash("Skill saved.", "success")
                 return redirect(url_for("skills"))
 
-        skills_list = query_all(
-            """
-            select
-                cs.id,
-                cs.title,
-                cs.category,
-                cs.notes,
-                cs.practiced_at,
-                cs.created_at,
-                latest_reflection.reflection_text,
-                latest_reflection.practiced_at as reflection_practiced_at,
-                latest_reflection.created_at as reflection_created_at
-            from client_skills cs
-            left join (
-                select csr.skill_id, csr.reflection_text, csr.practiced_at, csr.created_at
-                from client_skill_reflections csr
-                join (
-                    select skill_id, max(created_at) as latest_created_at
-                    from client_skill_reflections
-                    where client_id = ?
-                    group by skill_id
-                ) latest on latest.skill_id = csr.skill_id and latest.latest_created_at = csr.created_at
-                where csr.client_id = ?
-            ) latest_reflection on latest_reflection.skill_id = cs.id
-            where cs.client_id = ?
-            order by cs.practiced_at desc, cs.created_at desc
-            """,
-            (g.client["id"], g.client["id"], g.client["id"]),
-        )
-        return render_template("skills.html", skills=skills_list)
+        return render_template("skills.html", skills=get_client_skills_with_latest_reflection(g.client["id"]))
 
     @app.route("/skills/<int:skill_id>/reflections", methods=["POST"])
     @login_required
@@ -515,7 +534,7 @@ def create_app() -> Flask:
         reflection_text = request.form.get("reflection_text", "").strip()
         practiced_at = request.form.get("practiced_at", "").strip() or datetime.now().date().isoformat()
         if not reflection_text:
-            flash("Write what happened when you tried the skill before saving.", "error")
+            flash("Write a plan or feedback note before saving.", "error")
         else:
             execute(
                 """
@@ -525,9 +544,9 @@ def create_app() -> Flask:
                 """,
                 (g.client["id"], skill_id, reflection_text, practiced_at, now_iso()),
             )
-            record_audit(g.client["id"], "skill_reflection_added", "Client added skill practice reflection")
-            flash("Skill reflection saved.", "success")
-        return redirect(url_for("skills"))
+            record_audit(g.client["id"], "skill_reflection_added", "Client added skill plan or feedback")
+            flash("Plan or feedback saved.", "success")
+        return redirect(get_safe_next_url() or url_for("skills"))
 
     @app.route("/sessions")
     @login_required
@@ -633,7 +652,8 @@ def login_required(view):
     @wraps(view)
     def wrapped_view(**kwargs):
         if g.client is None:
-            return redirect(url_for("login"))
+            next_path = request.full_path if request.query_string else request.path
+            return redirect(url_for("login", next=next_path))
         return view(**kwargs)
 
     return wrapped_view
@@ -647,6 +667,13 @@ def admin_required(view):
         return view(**kwargs)
 
     return wrapped_view
+
+
+def get_safe_next_url() -> str:
+    next_url = request.form.get("next", "").strip() or request.args.get("next", "").strip()
+    if next_url.startswith("/") and not next_url.startswith("//"):
+        return next_url
+    return ""
 
 
 def admin_account_count() -> int:
@@ -942,6 +969,194 @@ def build_portal_invite_sms(full_name: str, invite_url: str) -> str:
     )
 
 
+def get_portal_reminder_schedule(client_id: int) -> sqlite3.Row | None:
+    return query_one(
+        """
+        select *
+        from portal_sms_reminder_schedules
+        where client_id = ?
+        """,
+        (client_id,),
+    )
+
+
+def save_portal_reminder_schedule(
+    client_id: int,
+    enabled: bool,
+    frequency_days: int,
+    send_time_local: str,
+    target_path: str,
+    message_template: str,
+) -> None:
+    existing = get_portal_reminder_schedule(client_id)
+    timezone_name = get_setting("PORTAL_REMINDER_TIMEZONE", DEFAULT_TIMEZONE)
+    next_send_at = calculate_next_reminder_send_at(frequency_days, send_time_local, timezone_name)
+    template = message_template or DEFAULT_REMINDER_MESSAGE
+    enabled_value = 1 if enabled else 0
+
+    if existing is None:
+        execute(
+            """
+            insert into portal_sms_reminder_schedules
+                (client_id, enabled, frequency_days, send_time_local, timezone_name, target_path,
+                 message_template, last_sent_at, next_send_at, created_at, updated_at)
+            values (?, ?, ?, ?, ?, ?, ?, null, ?, ?, ?)
+            """,
+            (
+                client_id,
+                enabled_value,
+                frequency_days,
+                send_time_local,
+                timezone_name,
+                target_path,
+                template,
+                next_send_at,
+                now_iso(),
+                now_iso(),
+            ),
+        )
+        return
+
+    execute(
+        """
+        update portal_sms_reminder_schedules
+        set enabled = ?,
+            frequency_days = ?,
+            send_time_local = ?,
+            timezone_name = ?,
+            target_path = ?,
+            message_template = ?,
+            next_send_at = ?,
+            updated_at = ?
+        where client_id = ?
+        """,
+        (
+            enabled_value,
+            frequency_days,
+            send_time_local,
+            timezone_name,
+            target_path,
+            template,
+            next_send_at,
+            now_iso(),
+            client_id,
+        ),
+    )
+
+
+def dispatch_due_portal_reminders() -> dict[str, int | list[str]]:
+    due_rows = query_all(
+        """
+        select
+            prs.*,
+            c.full_name,
+            c.preferred_name,
+            c.phone
+        from portal_sms_reminder_schedules prs
+        join clients c on c.id = prs.client_id
+        where prs.enabled = 1
+          and prs.next_send_at <= ?
+        order by prs.next_send_at
+        """,
+        (now_iso(),),
+    )
+    sent = 0
+    skipped = 0
+    errors = []
+
+    for row in due_rows:
+        client_name = str(row["preferred_name"] or row["full_name"] or "there")
+        to_number = normalize_phone_number(row["phone"])
+        if not to_number:
+            skipped += 1
+            errors.append(f"{row['full_name']}: missing mobile number")
+            continue
+
+        link = build_portal_absolute_url(str(row["target_path"] or "/dashboard"))
+        message = format_reminder_message(str(row["message_template"] or ""), client_name, link)
+        try:
+            _from_number, message_sid = send_twilio_sms(to_number, message)
+        except Exception as exc:
+            skipped += 1
+            errors.append(f"{row['full_name']}: {exc}")
+            continue
+
+        next_send_at = calculate_next_reminder_send_at(
+            int(row["frequency_days"] or 1),
+            str(row["send_time_local"] or "09:00"),
+            str(row["timezone_name"] or DEFAULT_TIMEZONE),
+            from_utc=datetime.now(timezone.utc) + timedelta(seconds=1),
+        )
+        execute(
+            """
+            update portal_sms_reminder_schedules
+            set last_sent_at = ?,
+                next_send_at = ?,
+                updated_at = ?
+            where id = ?
+            """,
+            (now_iso(), next_send_at, now_iso(), row["id"]),
+        )
+        record_audit(row["client_id"], "portal_reminder_sms_sent", f"Sent portal reminder SMS: {message_sid}")
+        sent += 1
+
+    return {"due": len(due_rows), "sent": sent, "skipped": skipped, "errors": errors}
+
+
+def calculate_next_reminder_send_at(
+    frequency_days: int,
+    send_time_local: str,
+    timezone_name: str,
+    from_utc: datetime | None = None,
+) -> str:
+    tz = ZoneInfo(timezone_name or DEFAULT_TIMEZONE)
+    now_local = (from_utc or datetime.now(timezone.utc)).astimezone(tz)
+    hour, minute = parse_local_time(send_time_local)
+    candidate = now_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if candidate <= now_local:
+        candidate = candidate + timedelta(days=max(1, frequency_days))
+    return candidate.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
+def parse_local_time(value: str) -> tuple[int, int]:
+    if not valid_local_time(value):
+        return 9, 0
+    hour_text, minute_text = value.split(":", 1)
+    return int(hour_text), int(minute_text)
+
+
+def valid_local_time(value: str) -> bool:
+    if not re.fullmatch(r"\d{2}:\d{2}", str(value or "")):
+        return False
+    hour_text, minute_text = value.split(":", 1)
+    hour = int(hour_text)
+    minute = int(minute_text)
+    return 0 <= hour <= 23 and 0 <= minute <= 59
+
+
+def parse_positive_int(value: str | None, default: int = 1, maximum: int = 30) -> int:
+    try:
+        parsed = int(str(value or "").strip())
+    except ValueError:
+        return default
+    return max(1, min(parsed, maximum))
+
+
+def build_portal_absolute_url(path: str) -> str:
+    clean_path = path if path.startswith("/") and not path.startswith("//") else "/dashboard"
+    base_url = get_setting("PORTAL_BASE_URL", "https://portal.engineeredpsychology.com").rstrip("/")
+    return f"{base_url}{clean_path}"
+
+
+def format_reminder_message(template: str, client_name: str, link: str) -> str:
+    first = first_name(client_name) or "there"
+    body = template or DEFAULT_REMINDER_MESSAGE
+    try:
+        return body.format(first_name=first, full_name=client_name, link=link)
+    except (KeyError, ValueError):
+        return DEFAULT_REMINDER_MESSAGE.format(first_name=first, full_name=client_name, link=link)
+
+
 def get_setting(name: str, default: str = "") -> str:
     value = os.environ.get(name, "").strip()
     if value:
@@ -1091,6 +1306,38 @@ def add_skill_for_client(
     record_audit(client_id, "skill_added", f"Added skill: {title}")
 
 
+def get_client_skills_with_latest_reflection(client_id: int) -> list[sqlite3.Row]:
+    return query_all(
+        """
+        select
+            cs.id,
+            cs.title,
+            cs.category,
+            cs.notes,
+            cs.practiced_at,
+            cs.created_at,
+            latest_reflection.reflection_text,
+            latest_reflection.practiced_at as reflection_practiced_at,
+            latest_reflection.created_at as reflection_created_at
+        from client_skills cs
+        left join (
+            select csr.skill_id, csr.reflection_text, csr.practiced_at, csr.created_at
+            from client_skill_reflections csr
+            join (
+                select skill_id, max(created_at) as latest_created_at
+                from client_skill_reflections
+                where client_id = ?
+                group by skill_id
+            ) latest on latest.skill_id = csr.skill_id and latest.latest_created_at = csr.created_at
+            where csr.client_id = ?
+        ) latest_reflection on latest_reflection.skill_id = cs.id
+        where cs.client_id = ?
+        order by cs.practiced_at desc, cs.created_at desc
+        """,
+        (client_id, client_id, client_id),
+    )
+
+
 def add_session_for_client(
     client_id: int,
     session_date: str,
@@ -1208,12 +1455,29 @@ def init_db(app: Flask) -> None:
                 used_client_id integer references clients(id)
             );
 
+            create table if not exists portal_sms_reminder_schedules (
+                id integer primary key autoincrement,
+                client_id integer not null unique references clients(id),
+                enabled integer not null default 0,
+                frequency_days integer not null default 1,
+                send_time_local text not null default '09:00',
+                timezone_name text not null default 'Australia/Sydney',
+                target_path text not null default '/sessions',
+                message_template text not null,
+                last_sent_at text,
+                next_send_at text not null,
+                created_at text not null,
+                updated_at text not null
+            );
+
             create index if not exists idx_password_reset_tokens_client
                 on password_reset_tokens(client_id);
             create index if not exists idx_password_reset_tokens_token_hash
                 on password_reset_tokens(token_hash);
             create index if not exists idx_portal_invites_token_hash
                 on portal_invites(token_hash);
+            create index if not exists idx_portal_sms_reminders_next_send
+                on portal_sms_reminder_schedules(enabled, next_send_at);
             create index if not exists idx_session_reflections_session
                 on session_reflections(session_id);
             create index if not exists idx_client_skill_reflections_skill
@@ -1325,6 +1589,10 @@ init_db(app)
 
 
 if __name__ == "__main__":
-    host = os.environ.get("HOST", "127.0.0.1")
-    port = int(os.environ.get("PORT", "3020"))
-    app.run(host=host, port=port, debug=os.environ.get("FLASK_ENV") == "development")
+    if len(sys.argv) > 1 and sys.argv[1] == "dispatch-reminders":
+        with app.app_context():
+            print(json.dumps(dispatch_due_portal_reminders()))
+    else:
+        host = os.environ.get("HOST", "127.0.0.1")
+        port = int(os.environ.get("PORT", "3020"))
+        app.run(host=host, port=port, debug=os.environ.get("FLASK_ENV") == "development")

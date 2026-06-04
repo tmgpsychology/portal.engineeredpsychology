@@ -1,0 +1,10 @@
+[Unit]
+Description=Dispatch due Engineered Psychology portal SMS reminders
+After=network.target
+
+[Service]
+Type=oneshot
+User=ec2-user
+WorkingDirectory=/home/ec2-user/apps/portal-engineeredpsychology
+EnvironmentFile=/home/ec2-user/apps/portal-engineeredpsychology/.env
+ExecStart=/home/ec2-user/apps/portal-engineeredpsychology/.venv/bin/python app.py dispatch-reminders

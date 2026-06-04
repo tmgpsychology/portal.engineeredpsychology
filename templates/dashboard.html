@@ -7,42 +7,46 @@
     <div>
       <p class="eyebrow">Welcome back</p>
       <h1>{{ g.client.preferred_name or g.client.full_name }}</h1>
-      <p>Your session cards are collected here.</p>
+      <p>Your skills and strategies are collected here.</p>
     </div>
   </section>
 
-  <section class="session-list" aria-label="Session cards">
-    {% for session in sessions %}
-      <article class="panel session-card">
-        <div class="session-meta">
-          <span>{{ session.session_date }}</span>
-          <h2>{{ session.title }}</h2>
+  <section class="skill-list" aria-label="Skills and strategies">
+    {% for skill in skills %}
+      <article class="panel skill-card">
+        <div>
+          <p class="eyebrow">{{ skill.category }}</p>
+          <h2>{{ skill.title }}</h2>
+          <small>{{ skill.practiced_at }}</small>
         </div>
-        {% if session.summary %}
-          <p>{{ session.summary }}</p>
-        {% endif %}
-        {% if session.key_skills %}
-          <div>
-            <strong>Skills and interventions</strong>
-            <div class="chip-row">
-              {% for skill in session.key_skills.splitlines() %}
-                {% if skill.strip() %}
-                  <span class="chip">{{ skill.strip() }}</span>
-                {% endif %}
-              {% endfor %}
-            </div>
-          </div>
-        {% endif %}
-        {% if session.next_steps %}
+        {% if skill.notes %}
           <div class="next-steps">
-            <strong>Between-session focus</strong>
-            <p>{{ session.next_steps }}</p>
+            <strong>Therapist plan</strong>
+            <p>{{ skill.notes }}</p>
           </div>
         {% endif %}
+        {% if skill.reflection_text %}
+          <div class="client-reflection">
+            <span>Latest plan or feedback{% if skill.reflection_practiced_at %} · {{ skill.reflection_practiced_at }}{% endif %}</span>
+            <p>{{ skill.reflection_text }}</p>
+          </div>
+        {% endif %}
+        <form class="reflection-form" method="post" action="{{ url_for('add_skill_reflection', skill_id=skill.id) }}">
+          <input type="hidden" name="next" value="{{ request.path }}">
+          <label>
+            <span>Your plan or feedback for this skill</span>
+            <textarea name="reflection_text" rows="4" placeholder="How you plan to use it, what happened when you tried it, or what you want your therapist to know."></textarea>
+          </label>
+          <label>
+            <span>Date</span>
+            <input type="date" name="practiced_at">
+          </label>
+          <button class="secondary-button" type="submit">Save plan or feedback</button>
+        </form>
       </article>
     {% else %}
       <article class="panel">
-        <p class="empty-state">No sessions have been added yet.</p>
+        <p class="empty-state">No skills or strategies have been added yet.</p>
       </article>
     {% endfor %}
   </section>

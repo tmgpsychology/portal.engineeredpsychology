@@ -12,6 +12,9 @@
 
     <div class="auth-stack">
       <form class="auth-panel" method="post" action="{{ url_for('login') }}">
+        {% if request.args.get("next") %}
+          <input type="hidden" name="next" value="{{ request.args.get('next') }}">
+        {% endif %}
         <div class="auth-heading">
           <p class="eyebrow">Secure account</p>
           <h2>Sign in</h2>
