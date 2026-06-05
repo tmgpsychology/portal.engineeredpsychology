@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}Track{% endblock %}
+
+{% block content %}
+  <section class="page-section">
+    <p class="eyebrow">Track</p>
+    <h1>Weekly behaviour tracker</h1>
+    <p>Behaviour counts come first. Mood and barriers help explain what made action easier or harder.</p>
+  </section>
+
+  {% if active_goal %}
+    <section class="track-layout">
+      <article class="panel tracker-card">
+        <div class="panel-heading">
+          <div>
+            <span>Goal</span>
+            <h2>{{ active_goal.behaviour_target }}</h2>
+          </div>
+          <strong>{{ goal_summary.completed_count }} / {{ active_goal.frequency_target }} completed</strong>
+        </div>
+        <div class="week-tracker" aria-label="Current week">
+          {% for day in week_days %}
+            <div class="day-tile {{ day.status }}">
+              <span>{{ day.label }}</span>
+              <strong>
+                {% if day.status == "yes" %}✓{% elif day.status == "skipped" %}–{% elif day.status == "not_yet" %}○{% else %}○{% endif %}
+              </strong>
+            </div>
+          {% endfor %}
+        </div>
+      </article>
+
+      <article class="panel">
+        <p class="eyebrow">Barrier tags</p>
+        <div class="chip-row">
+          {% for tag in barrier_tags %}
+            <span class="chip">{{ tag }}</span>
+          {% endfor %}
+        </div>
+      </article>
+
+      <article class="panel">
+        <p class="eyebrow">What helped</p>
+        <div class="chip-row">
+          {% for tag in helped_tags %}
+            <span class="chip">{{ tag }}</span>
+          {% endfor %}
+        </div>
+      </article>
+
+      <article class="panel reset-card">
+        <p class="eyebrow">Reset action</p>
+        <h2>{{ active_goal.backup_version or "Do a 30-second version now." }}</h2>
+        <p>Recovery speed matters more than a perfect streak.</p>
+      </article>
+    </section>
+  {% else %}
+    <article class="panel empty-change-state">
+      <p class="empty-state">No active behaviour goal has been set yet.</p>
+    </article>
+  {% endif %}
+{% endblock %}

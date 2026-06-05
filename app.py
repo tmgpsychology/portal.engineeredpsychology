@@ -46,8 +46,37 @@ DEFAULT_REMINDER_MESSAGE = (
 REMINDER_TARGET_OPTIONS = (
     ("/sessions", "Sessions and session notes"),
     ("/skills", "Skills and practice notes"),
+    ("/dashboard", "Today behaviour check-in"),
     ("/profile", "Profile"),
-    ("/dashboard", "Dashboard"),
+)
+FOCUS_AREAS = (
+    "Mood and motivation",
+    "Anxiety and avoidance",
+    "Anger or emotional reactivity",
+    "Substance use",
+    "Relationship communication",
+    "Sleep routine",
+    "Self-worth",
+    "Study or work habits",
+    "Parenting behaviour",
+    "Other",
+)
+BARRIER_TAGS = (
+    "Forgot",
+    "Too overwhelmed",
+    "Anxious",
+    "Low mood",
+    "Conflict",
+    "No time",
+    "Too tired",
+    "Other",
+)
+HELPED_TAGS = (
+    "Reminder",
+    "Support person",
+    "Smaller task",
+    "Reward",
+    "Values reminder",
 )
 
 
@@ -315,9 +344,37 @@ def create_app() -> Flask:
                 c.email,
                 c.phone,
                 c.created_at,
-                count(distinct ts.id) as session_count
+                count(distinct ts.id) as session_count,
+                active_goal.focus_area as goal_area,
+                active_goal.frequency_target as frequency_target,
+                coalesce(weekly.completed_count, 0) as completed_count,
+                coalesce(weekly.checkin_count, 0) as checkin_count,
+                coalesce(weekly.avg_mood, 0) as avg_mood
             from clients c
             left join therapy_sessions ts on ts.client_id = c.id
+            left join (
+                select *
+                from change_goals cg
+                where cg.status = 'active'
+                  and cg.id = (
+                    select id
+                    from change_goals newer
+                    where newer.client_id = cg.client_id and newer.status = 'active'
+                    order by newer.created_at desc
+                    limit 1
+                  )
+            ) active_goal on active_goal.client_id = c.id
+            left join (
+                select
+                    client_id,
+                    goal_id,
+                    sum(case when completed_status = 'yes' then 1 else 0 end) as completed_count,
+                    count(*) as checkin_count,
+                    avg(nullif(mood_rating, 0)) as avg_mood
+                from daily_checkins
+                where checkin_date >= date('now', '-6 days')
+                group by client_id, goal_id
+            ) weekly on weekly.client_id = c.id and weekly.goal_id = active_goal.id
             group by c.id
             order by c.full_name
             """
@@ -410,10 +467,19 @@ def create_app() -> Flask:
             """,
             (client_id,),
         )
+        active_goal = get_active_change_goal(client_id)
+        goal_summary = get_goal_summary(active_goal["id"]) if active_goal else None
+        recent_checkins = get_recent_goal_checkins(active_goal["id"], limit=14) if active_goal else []
+        diagnostic = get_latest_change_loop_review(client_id)
         reminder_schedule = get_portal_reminder_schedule(client_id)
         return render_template(
             "admin_client_detail.html",
             client=client,
+            active_goal=active_goal,
+            focus_areas=FOCUS_AREAS,
+            goal_summary=goal_summary,
+            recent_checkins=recent_checkins,
+            diagnostic=diagnostic,
             sessions=sessions,
             skills=get_client_skills_with_latest_reflection(client_id),
             skill_reflections=skill_reflections,
@@ -421,6 +487,68 @@ def create_app() -> Flask:
             reminder_target_options=REMINDER_TARGET_OPTIONS,
             portal_reminders_configured=twilio_sms_configured(),
         )
+
+    @app.route("/admin/clients/<int:client_id>/change-goals", methods=["POST"])
+    @admin_required
+    def admin_save_change_goal(client_id: int):
+        client = get_client_or_404(client_id)
+        focus_area = request.form.get("focus_area", "").strip()
+        values_link = request.form.get("values_link", "").strip()
+        behaviour_target = request.form.get("behaviour_target", "").strip()
+        tiny_behaviour = request.form.get("tiny_behaviour", "").strip()
+        cue = request.form.get("cue", "").strip()
+        backup_version = request.form.get("backup_version", "").strip()
+        frequency_target = parse_positive_int(request.form.get("frequency_target"), default=5, maximum=7)
+        confidence_rating = parse_positive_int(request.form.get("confidence_rating"), default=7, maximum=10)
+
+        if not behaviour_target or not tiny_behaviour or not cue:
+            flash("Add a behaviour target, tiny behaviour, and cue before saving.", "error")
+        else:
+            save_change_goal(
+                client["id"],
+                focus_area or "Behaviour change",
+                values_link,
+                behaviour_target,
+                tiny_behaviour,
+                cue,
+                backup_version,
+                frequency_target,
+                confidence_rating,
+            )
+            flash("Behaviour goal saved and set as active.", "success")
+        return redirect(url_for("admin_client_detail", client_id=client_id))
+
+    @app.route("/admin/clients/<int:client_id>/change-review", methods=["POST"])
+    @admin_required
+    def admin_save_change_review(client_id: int):
+        client = get_client_or_404(client_id)
+        active_goal = get_active_change_goal(client["id"])
+        if active_goal is None:
+            flash("Create an active behaviour goal before saving a loop review.", "error")
+            return redirect(url_for("admin_client_detail", client_id=client_id))
+
+        breakdown_points = request.form.getlist("breakdown_points")
+        recommended_adjustment = request.form.get("recommended_adjustment", "").strip()
+        session_agenda = request.form.get("session_agenda", "").strip()
+        execute(
+            """
+            insert into therapist_reviews
+                (client_id, goal_id, review_date, breakdown_points, recommended_adjustment, session_agenda, created_at)
+            values (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                client["id"],
+                active_goal["id"],
+                datetime.now().date().isoformat(),
+                json.dumps(breakdown_points),
+                recommended_adjustment,
+                session_agenda,
+                now_iso(),
+            ),
+        )
+        record_audit(client["id"], "change_loop_review_added", "Therapist saved change loop diagnostic")
+        flash("Change loop diagnostic saved.", "success")
+        return redirect(url_for("admin_client_detail", client_id=client_id))
 
     @app.route("/admin/clients/<int:client_id>/reminder-schedule", methods=["POST"])
     @admin_required
@@ -517,8 +645,85 @@ def create_app() -> Flask:
     @app.route("/dashboard")
     @login_required
     def dashboard():
+        active_goal = get_active_change_goal(g.client["id"])
+        todays_checkin = (
+            get_checkin_for_date(active_goal["id"], datetime.now().date().isoformat())
+            if active_goal
+            else None
+        )
         return render_template(
             "dashboard.html",
+            active_goal=active_goal,
+            todays_checkin=todays_checkin,
+            goal_summary=get_goal_summary(active_goal["id"]) if active_goal else None,
+        )
+
+    @app.route("/today/check-in", methods=["POST"])
+    @login_required
+    def save_today_checkin():
+        active_goal = get_active_change_goal(g.client["id"])
+        if active_goal is None:
+            flash("Your therapist needs to set an active behaviour goal first.", "error")
+            return redirect(url_for("dashboard"))
+
+        completed_status = request.form.get("completed_status", "not_yet").strip()
+        if completed_status not in {"yes", "not_yet", "skipped"}:
+            completed_status = "not_yet"
+        mood_rating = parse_positive_int(request.form.get("mood_rating"), default=0, maximum=5)
+        note = request.form.get("note", "").strip()
+        barrier_tags = request.form.getlist("barrier_tags")
+        helped_tags = request.form.getlist("helped_tags")
+        save_daily_checkin(
+            g.client["id"],
+            active_goal["id"],
+            datetime.now().date().isoformat(),
+            completed_status,
+            mood_rating,
+            note,
+            barrier_tags,
+            helped_tags,
+        )
+        record_audit(g.client["id"], "daily_checkin_saved", f"Saved check-in: {completed_status}")
+        flash("Today saved.", "success")
+        return redirect(url_for("dashboard"))
+
+    @app.route("/goals")
+    @login_required
+    def goals():
+        active_goal = get_active_change_goal(g.client["id"])
+        return render_template("goals.html", active_goal=active_goal)
+
+    @app.route("/track")
+    @login_required
+    def track():
+        active_goal = get_active_change_goal(g.client["id"])
+        return render_template(
+            "track.html",
+            active_goal=active_goal,
+            week_days=get_current_week_checkins(active_goal["id"]) if active_goal else [],
+            goal_summary=get_goal_summary(active_goal["id"]) if active_goal else None,
+            barrier_tags=BARRIER_TAGS,
+            helped_tags=HELPED_TAGS,
+        )
+
+    @app.route("/insights")
+    @login_required
+    def insights():
+        active_goal = get_active_change_goal(g.client["id"])
+        return render_template(
+            "insights.html",
+            active_goal=active_goal,
+            goal_summary=get_goal_summary(active_goal["id"]) if active_goal else None,
+            latest_review=get_latest_change_loop_review(g.client["id"]),
+        )
+
+    @app.route("/support")
+    @login_required
+    def support():
+        active_goal = get_active_change_goal(g.client["id"])
+        return render_template(
+            "support.html",
+            active_goal=active_goal,
             skills=get_client_skills_with_latest_reflection(g.client["id"]),
         )
 
@@ -1358,6 +1563,258 @@ def add_skill_reflection_for_client(
     )
 
 
+def save_change_goal(
+    client_id: int,
+    focus_area: str,
+    values_link: str,
+    behaviour_target: str,
+    tiny_behaviour: str,
+    cue: str,
+    backup_version: str,
+    frequency_target: int,
+    confidence_rating: int,
+) -> None:
+    execute("update change_goals set status = 'inactive' where client_id = ? and status = 'active'", (client_id,))
+    execute(
+        """
+        insert into change_goals
+            (client_id, focus_area, values_link, behaviour_target, tiny_behaviour, cue,
+             backup_version, frequency_target, confidence_rating, status, created_at, updated_at)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+        """,
+        (
+            client_id,
+            focus_area,
+            values_link,
+            behaviour_target,
+            tiny_behaviour,
+            cue,
+            backup_version,
+            frequency_target,
+            confidence_rating,
+            now_iso(),
+            now_iso(),
+        ),
+    )
+    record_audit(client_id, "change_goal_saved", f"Active behaviour goal saved: {behaviour_target}")
+
+
+def get_active_change_goal(client_id: int) -> sqlite3.Row | None:
+    return query_one(
+        """
+        select *
+        from change_goals
+        where client_id = ? and status = 'active'
+        order by created_at desc
+        limit 1
+        """,
+        (client_id,),
+    )
+
+
+def get_checkin_for_date(goal_id: int, checkin_date: str) -> sqlite3.Row | None:
+    return query_one(
+        """
+        select *
+        from daily_checkins
+        where goal_id = ? and checkin_date = ?
+        """,
+        (goal_id, checkin_date),
+    )
+
+
+def save_daily_checkin(
+    client_id: int,
+    goal_id: int,
+    checkin_date: str,
+    completed_status: str,
+    mood_rating: int,
+    note: str,
+    barrier_tags: list[str],
+    helped_tags: list[str],
+) -> None:
+    existing = get_checkin_for_date(goal_id, checkin_date)
+    clean_barriers = [tag for tag in barrier_tags if tag in BARRIER_TAGS]
+    clean_helped = [tag for tag in helped_tags if tag in HELPED_TAGS]
+    if existing is None:
+        execute(
+            """
+            insert into daily_checkins
+                (client_id, goal_id, checkin_date, completed_status, mood_rating, note,
+                 barrier_tags, helped_tags, created_at, updated_at)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                client_id,
+                goal_id,
+                checkin_date,
+                completed_status,
+                mood_rating,
+                note,
+                json.dumps(clean_barriers),
+                json.dumps(clean_helped),
+                now_iso(),
+                now_iso(),
+            ),
+        )
+        return
+
+    execute(
+        """
+        update daily_checkins
+        set completed_status = ?,
+            mood_rating = ?,
+            note = ?,
+            barrier_tags = ?,
+            helped_tags = ?,
+            updated_at = ?
+        where id = ?
+        """,
+        (
+            completed_status,
+            mood_rating,
+            note,
+            json.dumps(clean_barriers),
+            json.dumps(clean_helped),
+            now_iso(),
+            existing["id"],
+        ),
+    )
+
+
+def get_recent_goal_checkins(goal_id: int, limit: int = 14) -> list[dict]:
+    rows = query_all(
+        """
+        select *
+        from daily_checkins
+        where goal_id = ?
+        order by checkin_date desc
+        limit ?
+        """,
+        (goal_id, limit),
+    )
+    return [hydrate_checkin(row) for row in rows]
+
+
+def get_current_week_checkins(goal_id: int) -> list[dict]:
+    today = datetime.now().date()
+    start = today - timedelta(days=today.weekday())
+    rows = query_all(
+        """
+        select *
+        from daily_checkins
+        where goal_id = ? and checkin_date >= ? and checkin_date <= ?
+        """,
+        (goal_id, start.isoformat(), (start + timedelta(days=6)).isoformat()),
+    )
+    by_date = {row["checkin_date"]: hydrate_checkin(row) for row in rows}
+    days = []
+    for offset in range(7):
+        day = start + timedelta(days=offset)
+        checkin = by_date.get(day.isoformat())
+        days.append(
+            {
+                "date": day.isoformat(),
+                "label": day.strftime("%a"),
+                "status": checkin["completed_status"] if checkin else "open",
+                "mood_rating": checkin["mood_rating"] if checkin else None,
+            }
+        )
+    return days
+
+
+def get_goal_summary(goal_id: int) -> dict:
+    today = datetime.now().date()
+    this_start = today - timedelta(days=6)
+    last_start = today - timedelta(days=13)
+    last_end = today - timedelta(days=7)
+    this_rows = get_checkins_between(goal_id, this_start.isoformat(), today.isoformat())
+    last_rows = get_checkins_between(goal_id, last_start.isoformat(), last_end.isoformat())
+    completed_count = count_completed(this_rows)
+    last_completed = count_completed(last_rows)
+    mood_average = average_rating(this_rows, "mood_rating")
+    last_mood_average = average_rating(last_rows, "mood_rating")
+    common_barrier = most_common_tag(this_rows, "barrier_tags") or "Not enough data yet"
+    common_help = most_common_tag(this_rows, "helped_tags") or "Not enough data yet"
+    return {
+        "completed_count": completed_count,
+        "last_completed_count": last_completed,
+        "practice_delta": completed_count - last_completed,
+        "checkin_count": len(this_rows),
+        "mood_average": mood_average,
+        "mood_delta": round(mood_average - last_mood_average, 1) if mood_average and last_mood_average else None,
+        "common_barrier": common_barrier,
+        "common_help": common_help,
+    }
+
+
+def get_checkins_between(goal_id: int, start_date: str, end_date: str) -> list[dict]:
+    rows = query_all(
+        """
+        select *
+        from daily_checkins
+        where goal_id = ? and checkin_date >= ? and checkin_date <= ?
+        order by checkin_date
+        """,
+        (goal_id, start_date, end_date),
+    )
+    return [hydrate_checkin(row) for row in rows]
+
+
+def hydrate_checkin(row: sqlite3.Row) -> dict:
+    checkin = dict(row)
+    checkin["barrier_tags"] = parse_json_list(checkin.get("barrier_tags"))
+    checkin["helped_tags"] = parse_json_list(checkin.get("helped_tags"))
+    return checkin
+
+
+def parse_json_list(value: str | None) -> list[str]:
+    try:
+        parsed = json.loads(value or "[]")
+    except json.JSONDecodeError:
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
+def count_completed(rows: list[dict]) -> int:
+    return sum(1 for row in rows if row.get("completed_status") == "yes")
+
+
+def average_rating(rows: list[dict], key: str) -> float:
+    ratings = [int(row[key]) for row in rows if row.get(key)]
+    if not ratings:
+        return 0
+    return round(sum(ratings) / len(ratings), 1)
+
+
+def most_common_tag(rows: list[dict], key: str) -> str:
+    counts: dict[str, int] = {}
+    for row in rows:
+        for tag in row.get(key, []):
+            counts[tag] = counts.get(tag, 0) + 1
+    if not counts:
+        return ""
+    return sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+
+
+def get_latest_change_loop_review(client_id: int) -> dict | None:
+    row = query_one(
+        """
+        select *
+        from therapist_reviews
+        where client_id = ?
+        order by created_at desc
+        limit 1
+        """,
+        (client_id,),
+    )
+    if row is None:
+        return None
+    review = dict(row)
+    review["breakdown_points"] = parse_json_list(review.get("breakdown_points"))
+    return review
+
+
 def get_client_skills_with_latest_reflection(client_id: int) -> list[dict]:
     skill_rows = query_all(
         """
@@ -1523,6 +1980,48 @@ def init_db(app: Flask) -> None:
                 updated_at text not null
             );
 
+            create table if not exists change_goals (
+                id integer primary key autoincrement,
+                client_id integer not null references clients(id),
+                focus_area text not null,
+                values_link text,
+                behaviour_target text not null,
+                tiny_behaviour text not null,
+                cue text not null,
+                backup_version text,
+                frequency_target integer not null default 5,
+                confidence_rating integer not null default 7,
+                status text not null default 'active',
+                created_at text not null,
+                updated_at text not null
+            );
+
+            create table if not exists daily_checkins (
+                id integer primary key autoincrement,
+                client_id integer not null references clients(id),
+                goal_id integer not null references change_goals(id),
+                checkin_date text not null,
+                completed_status text not null,
+                mood_rating integer,
+                note text,
+                barrier_tags text not null default '[]',
+                helped_tags text not null default '[]',
+                created_at text not null,
+                updated_at text not null,
+                unique(goal_id, checkin_date)
+            );
+
+            create table if not exists therapist_reviews (
+                id integer primary key autoincrement,
+                client_id integer not null references clients(id),
+                goal_id integer not null references change_goals(id),
+                review_date text not null,
+                breakdown_points text not null default '[]',
+                recommended_adjustment text,
+                session_agenda text,
+                created_at text not null
+            );
+
             create index if not exists idx_password_reset_tokens_client
                 on password_reset_tokens(client_id);
             create index if not exists idx_password_reset_tokens_token_hash
@@ -1535,6 +2034,12 @@ def init_db(app: Flask) -> None:
                 on session_reflections(session_id);
             create index if not exists idx_client_skill_reflections_skill
                 on client_skill_reflections(skill_id);
+            create index if not exists idx_change_goals_client_status
+                on change_goals(client_id, status);
+            create index if not exists idx_daily_checkins_goal_date
+                on daily_checkins(goal_id, checkin_date);
+            create index if not exists idx_therapist_reviews_client
+                on therapist_reviews(client_id, created_at);
             """
         )
         ensure_column_exists(db, "client_skills", "author_role", "text not null default 'therapist'")
@@ -1542,6 +2047,7 @@ def init_db(app: Flask) -> None:
         db.commit()
         seed_demo_data()
         ensure_demo_session_data()
+        ensure_demo_change_loop_data()
         ensure_master_account()
 
 
@@ -1621,6 +2127,52 @@ def ensure_demo_session_data() -> None:
             now_iso(),
         ),
     )
+
+
+def ensure_demo_change_loop_data() -> None:
+    client = query_one("select id from clients order by id limit 1")
+    if client is None:
+        return
+
+    existing = query_one("select id from change_goals where client_id = ? limit 1", (client["id"],))
+    if existing is not None:
+        return
+
+    save_change_goal(
+        int(client["id"]),
+        "Anxiety and avoidance",
+        "I want to feel more capable and less controlled by avoidance.",
+        "Open avoided emails after morning coffee",
+        "Open the inbox and read one email only.",
+        "After making morning coffee",
+        "Open the inbox for 30 seconds only.",
+        5,
+        8,
+    )
+    goal = get_active_change_goal(int(client["id"]))
+    if goal is None:
+        return
+
+    today = datetime.now().date()
+    demo_rows = [
+        (-6, "yes", 3, "It was easier once I started.", [], ["Reminder"]),
+        (-5, "yes", 3, "Read one low-stakes email.", [], ["Smaller task"]),
+        (-4, "skipped", 2, "I avoided emails from my boss.", ["Anxious"], []),
+        (-3, "yes", 4, "Coffee cue helped.", [], ["Values reminder"]),
+        (-2, "not_yet", 3, "", ["No time"], []),
+        (-1, "yes", 4, "Opened inbox for two minutes.", [], ["Reminder"]),
+    ]
+    for offset, status, mood, note, barriers, helped in demo_rows:
+        save_daily_checkin(
+            int(client["id"]),
+            int(goal["id"]),
+            (today + timedelta(days=offset)).isoformat(),
+            status,
+            mood,
+            note,
+            barriers,
+            helped,
+        )
 
 
 def ensure_master_account() -> None:

@@ -1,57 +1,110 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard{% endblock %}
+{% block title %}Today{% endblock %}
 
 {% block content %}
-  <section class="dashboard-hero">
+  <section class="dashboard-hero changeloop-hero">
     <div>
-      <p class="eyebrow">Welcome back</p>
-      <h1>{{ g.client.preferred_name or g.client.full_name }}</h1>
-      <p>Your skills and strategies are collected here.</p>
+      <p class="eyebrow">ChangeLoop</p>
+      <h1>Today</h1>
+      <p>One behaviour, one cue, one quick feedback loop between sessions.</p>
     </div>
   </section>
 
-  <section class="skill-list" aria-label="Skills and strategies">
-    {% for skill in skills %}
-      <article class="panel skill-card">
-        <div class="skill-origin {{ skill.author_role }}-text">
-          <p class="eyebrow">{{ skill.category }}</p>
-          <h2>{{ skill.title }}</h2>
-          <small>{{ skill.practiced_at }}</small>
+  {% if active_goal %}
+    <section class="today-shell">
+      <article class="panel today-card">
+        <div class="loop-strip" aria-label="Change loop">
+          <span>Goal</span>
+          <span>Tiny behaviour</span>
+          <span>Cue</span>
+          <span>Track</span>
+          <span>Adjust</span>
         </div>
-        {% if skill.notes %}
-          <div class="entry-note {{ skill.author_role }}-entry">
-            <strong>{{ "Therapist plan" if skill.author_role == "therapist" else "Client plan" }}</strong>
-            <p>{{ skill.notes }}</p>
+
+        <div class="today-target">
+          <p class="eyebrow">Your change target</p>
+          <h2>{{ active_goal.behaviour_target }}</h2>
+        </div>
+
+        <div class="today-action">
+          <p class="eyebrow">Today's tiny action</p>
+          <p>{{ active_goal.tiny_behaviour }}</p>
+        </div>
+
+        <div class="cue-card">
+          <span>Cue</span>
+          <strong>{{ active_goal.cue }}</strong>
+        </div>
+
+        <div class="progress-meter" aria-label="Weekly progress">
+          <div>
+            <span>Progress this week</span>
+            <strong>{{ goal_summary.completed_count }} / {{ active_goal.frequency_target }} practices</strong>
           </div>
-        {% endif %}
-        {% if skill.reflections %}
-          <div class="entry-list">
-            {% for reflection in skill.reflections %}
-              <div class="entry-note {{ reflection.author_role }}-entry">
-                <strong>{{ "Therapist" if reflection.author_role == "therapist" else "Client" }} plan or feedback{% if reflection.practiced_at %} · {{ reflection.practiced_at }}{% endif %}</strong>
-                <p>{{ reflection.reflection_text }}</p>
-              </div>
+          <div class="practice-blocks" aria-hidden="true">
+            {% for index in range(active_goal.frequency_target) %}
+              <span class="{% if index < goal_summary.completed_count %}filled{% endif %}"></span>
             {% endfor %}
           </div>
-        {% endif %}
-        <form class="reflection-form client-entry-form" method="post" action="{{ url_for('add_skill_reflection', skill_id=skill.id) }}">
-          <input type="hidden" name="next" value="{{ request.path }}">
+        </div>
+
+        <form class="today-form" method="post" action="{{ url_for('save_today_checkin') }}">
+          <fieldset>
+            <legend>Mood today</legend>
+            <div class="segmented-options compact-options">
+              {% for rating in range(1, 6) %}
+                <label>
+                  <input type="radio" name="mood_rating" value="{{ rating }}" {% if todays_checkin and todays_checkin.mood_rating == rating %}checked{% endif %}>
+                  <span>{{ rating }}</span>
+                </label>
+              {% endfor %}
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Did you practise today?</legend>
+            <div class="segmented-options">
+              <label>
+                <input type="radio" name="completed_status" value="yes" {% if todays_checkin and todays_checkin.completed_status == "yes" %}checked{% endif %}>
+                <span>Yes</span>
+              </label>
+              <label>
+                <input type="radio" name="completed_status" value="not_yet" {% if not todays_checkin or todays_checkin.completed_status == "not_yet" %}checked{% endif %}>
+                <span>Not yet</span>
+              </label>
+              <label>
+                <input type="radio" name="completed_status" value="skipped" {% if todays_checkin and todays_checkin.completed_status == "skipped" %}checked{% endif %}>
+                <span>Skipped</span>
+              </label>
+            </div>
+          </fieldset>
+
           <label>
-            <span>Your plan or feedback for this skill</span>
-            <textarea name="reflection_text" rows="4" placeholder="How you plan to use it, what happened when you tried it, or what you want your therapist to know."></textarea>
+            <span>Quick note</span>
+            <textarea name="note" rows="3" placeholder="What happened today?">{{ todays_checkin.note if todays_checkin else "" }}</textarea>
           </label>
-          <label>
-            <span>Date</span>
-            <input type="date" name="practiced_at">
-          </label>
-          <button class="secondary-button" type="submit">Save plan or feedback</button>
+
+          <button class="primary-button" type="submit">Save today</button>
         </form>
       </article>
-    {% else %}
-      <article class="panel">
-        <p class="empty-state">No skills or strategies have been added yet.</p>
-      </article>
-    {% endfor %}
-  </section>
+
+      <aside class="panel reset-card">
+        <p class="eyebrow">Reset plan</p>
+        <h2>Lapses are part of change</h2>
+        <p>Use the smallest next step when the full version is too much.</p>
+        <div class="entry-note client-entry">
+          <strong>Backup version</strong>
+          <p>{{ active_goal.backup_version or "Do a 30-second version now." }}</p>
+        </div>
+        <a class="secondary-button button-link" href="{{ url_for('track') }}">Add barriers or review week</a>
+      </aside>
+    </section>
+  {% else %}
+    <article class="panel empty-change-state">
+      <p class="eyebrow">No active goal</p>
+      <h2>Your therapist will set one behaviour target with you.</h2>
+      <p>The first target should be small, observable, and attached to a cue you can notice.</p>
+    </article>
+  {% endif %}
 {% endblock %}

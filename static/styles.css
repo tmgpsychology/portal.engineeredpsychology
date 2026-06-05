@@ -409,6 +409,192 @@ body.portal-client .primary-button:disabled {
   padding: 38px 0 46px;
 }
 
+.changeloop-hero {
+  padding-bottom: 26px;
+}
+
+.today-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  gap: 18px;
+  align-items: start;
+}
+
+.today-card,
+.today-form,
+.today-target,
+.today-action,
+.reset-card,
+.goal-builder-preview,
+.session-prep-card,
+.therapist-summary-card {
+  display: grid;
+  gap: 16px;
+}
+
+.loop-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.loop-strip span {
+  min-height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--brand-sky-soft);
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-align: center;
+}
+
+.today-target h2,
+.today-action p,
+.cue-card strong,
+.goal-builder-preview h2,
+.reset-card h2,
+.session-prep-card h2,
+.therapist-summary-card h2 {
+  margin: 0;
+  color: var(--ink);
+}
+
+.today-target h2 {
+  font-size: clamp(1.65rem, 3vw, 2.35rem);
+  line-height: 1.12;
+}
+
+.today-action p,
+.reset-card p,
+.goal-builder-preview p,
+.session-prep-card p,
+.crisis-card p {
+  color: var(--muted);
+  line-height: 1.58;
+  margin: 0;
+}
+
+.cue-card,
+.progress-meter,
+.metric-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.cue-card {
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.cue-card span,
+.progress-meter span,
+.metric-row span,
+.metric-card span {
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 850;
+}
+
+.progress-meter {
+  flex-wrap: wrap;
+}
+
+.practice-blocks {
+  display: flex;
+  gap: 5px;
+}
+
+.practice-blocks span {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: #fffdf9;
+}
+
+.practice-blocks span.filled {
+  background: var(--brand-coral);
+  border-color: var(--brand-coral);
+}
+
+fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: 8px;
+}
+
+legend {
+  color: var(--muted);
+  font-weight: 800;
+  padding: 0;
+}
+
+.segmented-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.compact-options {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.segmented-options label {
+  display: block;
+}
+
+.segmented-options input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.segmented-options span {
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffdf9;
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 850;
+  text-align: center;
+}
+
+.segmented-options input:checked + span {
+  border-color: var(--accent);
+  background: var(--brand-sky-soft);
+  color: var(--accent-strong);
+  box-shadow: inset 0 -3px 0 rgba(21, 95, 103, 0.14);
+}
+
+.button-link {
+  display: inline-grid;
+  place-items: center;
+  min-height: 44px;
+  text-decoration: none;
+}
+
+.empty-change-state {
+  max-width: 720px;
+}
+
+.empty-change-state h2 {
+  margin: 0 0 8px;
+}
+
 .dashboard-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -588,6 +774,12 @@ body.portal-client .timeline-row > span {
   white-space: nowrap;
 }
 
+.client-row-stats .flag-chip,
+.flag-chip {
+  background: var(--brand-coral-soft);
+  color: var(--warn);
+}
+
 .admin-profile {
   box-shadow: var(--shadow-soft);
 }
@@ -597,6 +789,115 @@ body.portal-client .timeline-row > span {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
   margin-top: 18px;
+}
+
+.change-grid,
+.insight-grid,
+.support-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.change-grid h2,
+.support-grid h2 {
+  margin: 0;
+  line-height: 1.28;
+}
+
+.track-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(240px, 0.75fr);
+  gap: 18px;
+}
+
+.tracker-card {
+  grid-row: span 3;
+}
+
+.week-tracker {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.day-tile {
+  min-height: 92px;
+  display: grid;
+  gap: 8px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffdf9;
+}
+
+.day-tile span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.day-tile strong {
+  color: var(--accent-strong);
+  font-size: 1.55rem;
+}
+
+.day-tile.yes {
+  background: var(--brand-sky-soft);
+  border-color: rgba(21, 95, 103, 0.28);
+}
+
+.day-tile.skipped {
+  background: var(--brand-coral-soft);
+}
+
+.metric-card {
+  display: grid;
+  gap: 8px;
+}
+
+.metric-card strong {
+  color: var(--ink);
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.metric-card p {
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.checkbox-grid .checkbox-row {
+  align-items: flex-start;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffdf9;
+}
+
+.form-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.plain-list {
+  margin: 0;
+  padding-left: 22px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.chip-link {
+  text-decoration: none;
 }
 
 .skill-card {
@@ -860,6 +1161,11 @@ body.portal-client .chip:nth-child(3n) {
   .login-shell,
   .admin-two-column,
   .dashboard-grid,
+  .today-shell,
+  .change-grid,
+  .insight-grid,
+  .support-grid,
+  .track-layout,
   .skill-list,
   .split-section {
     grid-template-columns: 1fr;
@@ -880,6 +1186,18 @@ body.portal-client .chip:nth-child(3n) {
 
   .span-2 {
     grid-column: auto;
+  }
+
+  .loop-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .week-tracker {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .checkbox-grid {
+    grid-template-columns: 1fr;
   }
 
   .login-shell {
@@ -918,6 +1236,18 @@ body.portal-client .chip:nth-child(3n) {
   .entry-form,
   .auth-panel {
     padding: 16px;
+  }
+
+  .segmented-options {
+    grid-template-columns: 1fr;
+  }
+
+  .compact-options {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .week-tracker {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .auth-panel {

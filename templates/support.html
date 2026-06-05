@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Support{% endblock %}
+
+{% block content %}
+  <section class="page-section split-section">
+    <div>
+      <p class="eyebrow">Support</p>
+      <h1>Reasons, skills, and reset steps</h1>
+      <p>This app is for between-session behaviour practice. It is not monitored in real time.</p>
+    </div>
+
+    <article class="panel crisis-card">
+      <p class="eyebrow">Crisis support</p>
+      <h2>Immediate risk needs immediate support.</h2>
+      <p>If you are at immediate risk, call emergency services or use your agreed safety plan.</p>
+    </article>
+  </section>
+
+  <section class="support-grid">
+    <article class="panel">
+      <p class="eyebrow">My reasons for change</p>
+      <h2>{{ active_goal.values_link if active_goal else "Add this with your therapist." }}</h2>
+    </article>
+
+    <article class="panel">
+      <p class="eyebrow">My support plan</p>
+      <ol class="plain-list">
+        <li>Try the smallest version.</li>
+        <li>Read the values link.</li>
+        <li>Use a skill from therapy.</li>
+      </ol>
+    </article>
+
+    <article class="panel span-2">
+      <p class="eyebrow">Skills I am practising</p>
+      <div class="chip-row">
+        {% for skill in skills %}
+          <a class="chip chip-link" href="{{ url_for('skills') }}">{{ skill.title }}</a>
+        {% else %}
+          <span class="empty-state">No skills or strategies have been added yet.</span>
+        {% endfor %}
+      </div>
+    </article>
+  </section>
+{% endblock %}

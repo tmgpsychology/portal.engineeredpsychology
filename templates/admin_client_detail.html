@@ -50,6 +50,165 @@
     </form>
   </section>
 
+  <section class="page-section">
+    <p class="eyebrow">ChangeLoop</p>
+    <h1>Behaviour change engine</h1>
+  </section>
+
+  <section class="admin-two-column">
+    <article class="panel therapist-summary-card">
+      <p class="eyebrow">Current target</p>
+      {% if active_goal %}
+        <h2>{{ active_goal.behaviour_target }}</h2>
+        <div class="entry-note therapist-entry">
+          <strong>Tiny behaviour</strong>
+          <p>{{ active_goal.tiny_behaviour }}</p>
+        </div>
+        <div class="entry-note therapist-entry">
+          <strong>Cue</strong>
+          <p>{{ active_goal.cue }}</p>
+        </div>
+        <div class="metric-row">
+          <span>Adherence</span>
+          <strong>{{ goal_summary.completed_count }} / {{ active_goal.frequency_target }} this week</strong>
+        </div>
+        <div class="metric-row">
+          <span>Confidence</span>
+          <strong>{{ active_goal.confidence_rating }} / 10</strong>
+        </div>
+        <div class="metric-row">
+          <span>Most common barrier</span>
+          <strong>{{ goal_summary.common_barrier }}</strong>
+        </div>
+      {% else %}
+        <h2>No active behaviour target</h2>
+        <p class="empty-state">Set one small, cue-based behaviour for the client to practise before next session.</p>
+      {% endif %}
+    </article>
+
+    <form class="entry-form elevated-form therapist-entry-form" method="post" action="{{ url_for('admin_save_change_goal', client_id=client.id) }}">
+      <div class="auth-heading">
+        <p class="eyebrow">Goal builder</p>
+        <h2>{{ "Adjust behaviour goal" if active_goal else "Create behaviour goal" }}</h2>
+      </div>
+      <label>
+        <span>Focus area</span>
+        <select name="focus_area">
+          {% set selected_focus = active_goal.focus_area if active_goal else "Anxiety and avoidance" %}
+          {% for area in focus_areas %}
+            <option value="{{ area }}" {% if selected_focus == area %}selected{% endif %}>{{ area }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>What matters to the client?</span>
+        <textarea name="values_link" rows="2" placeholder="I want to be more present with my family.">{{ active_goal.values_link if active_goal else "" }}</textarea>
+      </label>
+      <label>
+        <span>Observable behaviour target</span>
+        <input name="behaviour_target" value="{{ active_goal.behaviour_target if active_goal else "" }}" placeholder="Open avoided emails after coffee" required>
+      </label>
+      <label>
+        <span>Make it tiny</span>
+        <input name="tiny_behaviour" value="{{ active_goal.tiny_behaviour if active_goal else "" }}" placeholder="Open inbox and read one email only" required>
+      </label>
+      <label>
+        <span>Attach it to a cue</span>
+        <input name="cue" value="{{ active_goal.cue if active_goal else "" }}" placeholder="After morning coffee" required>
+      </label>
+      <label>
+        <span>Backup version</span>
+        <input name="backup_version" value="{{ active_goal.backup_version if active_goal else "" }}" placeholder="Open the inbox for 30 seconds only">
+      </label>
+      <div class="form-row">
+        <label>
+          <span>Practices per week</span>
+          <input type="number" min="1" max="7" name="frequency_target" value="{{ active_goal.frequency_target if active_goal else 5 }}">
+        </label>
+        <label>
+          <span>Confidence 1-10</span>
+          <input type="number" min="1" max="10" name="confidence_rating" value="{{ active_goal.confidence_rating if active_goal else 7 }}">
+        </label>
+      </div>
+      <p class="form-hint">If confidence is below 7, shrink the behaviour before increasing motivational pressure.</p>
+      <button class="primary-button" type="submit">Save and send to client</button>
+    </form>
+  </section>
+
+  {% if active_goal %}
+    <section class="admin-two-column">
+      <form class="entry-form elevated-form therapist-entry-form" method="post" action="{{ url_for('admin_save_change_review', client_id=client.id) }}">
+        <div class="auth-heading">
+          <p class="eyebrow">Diagnostic</p>
+          <h2>Where is change breaking down?</h2>
+        </div>
+        {% set breakdown_options = [
+          "Goal is unclear",
+          "Behaviour is too large",
+          "Cue is weak or inconsistent",
+          "Client forgets",
+          "Emotional avoidance blocks action",
+          "Environment reinforces old behaviour",
+          "Low confidence / low self-efficacy",
+          "Goal is not values-linked",
+          "Skills deficit",
+          "Interpersonal context blocks change",
+          "Risk/substance/sleep issue interfering"
+        ] %}
+        <div class="checkbox-grid">
+          {% for option in breakdown_options %}
+            <label class="checkbox-row">
+              <input type="checkbox" name="breakdown_points" value="{{ option }}">
+              <span>{{ option }}</span>
+            </label>
+          {% endfor %}
+        </div>
+        <label>
+          <span>Recommended adjustment</span>
+          <textarea name="recommended_adjustment" rows="3" placeholder="Make the task smaller on low-energy days."></textarea>
+        </label>
+        <label>
+          <span>Suggested session agenda</span>
+          <textarea name="session_agenda" rows="4" placeholder="1. Reinforce repetitions&#10;2. Review barrier&#10;3. Practise next graded step"></textarea>
+        </label>
+        <button class="primary-button" type="submit">Save for next session</button>
+      </form>
+
+      <article class="panel session-prep-card">
+        <p class="eyebrow">Session prep</p>
+        <h2>Last 7 days</h2>
+        <div class="metric-row">
+          <span>Completion</span>
+          <strong>{{ goal_summary.completed_count }} / {{ active_goal.frequency_target }}</strong>
+        </div>
+        <div class="metric-row">
+          <span>Mood average</span>
+          <strong>{{ goal_summary.mood_average or "Not enough data" }}</strong>
+        </div>
+        <div class="metric-row">
+          <span>Barrier</span>
+          <strong>{{ goal_summary.common_barrier }}</strong>
+        </div>
+        <div class="entry-list">
+          {% for checkin in recent_checkins[:3] %}
+            {% if checkin.note %}
+              <div class="entry-note client-entry">
+                <strong>{{ checkin.checkin_date }} · {{ checkin.completed_status }}</strong>
+                <p>{{ checkin.note }}</p>
+              </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+        {% if diagnostic %}
+          <div class="entry-note therapist-entry">
+            <strong>Latest adjustment</strong>
+            <p>{{ diagnostic.recommended_adjustment or "Diagnostic saved." }}</p>
+          </div>
+        {% endif %}
+      </article>
+    </section>
+  {% endif %}
+
   <section class="page-section split-section">
     <div>
       <p class="eyebrow">SMS reminders</p>

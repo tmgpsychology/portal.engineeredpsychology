@@ -6,7 +6,7 @@
   <section class="page-section">
     <p class="eyebrow">Admin workspace</p>
     <h1>Clients</h1>
-    <p>Open a client to review their profile and add session cards for their portal.</p>
+    <p>Open a client to review behaviour targets, adherence, barriers, and session prep.</p>
   </section>
 
   <section class="page-section split-section admin-invite-section">
@@ -45,10 +45,17 @@
       <a class="panel client-row" href="{{ url_for('admin_client_detail', client_id=client.id) }}">
         <div>
           <strong>{{ client.full_name }}</strong>
-          <small>{{ client.email }}</small>
+          <small>{{ client.goal_area or "No active behaviour goal" }}</small>
         </div>
         <div class="client-row-stats">
-          <span>{{ client.session_count }} sessions</span>
+          <span>{{ client.completed_count }}/{{ client.frequency_target or 0 }} this week</span>
+          {% if client.goal_area and client.completed_count < (client.frequency_target or 1) / 2 %}
+            <span class="flag-chip">Review</span>
+          {% elif client.avg_mood and client.avg_mood < 3 %}
+            <span class="flag-chip">Low mood</span>
+          {% else %}
+            <span>{{ client.session_count }} sessions</span>
+          {% endif %}
         </div>
       </a>
     {% else %}

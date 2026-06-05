@@ -25,10 +25,11 @@
         </nav>
       {% elif g.client and request.endpoint not in ["login", "create_account", "admin_login"] %}
         <nav class="nav-links" aria-label="Portal">
-          <a href="{{ url_for('dashboard') }}">Dashboard</a>
-          <a href="{{ url_for('skills') }}">Skills</a>
-          <a href="{{ url_for('sessions') }}">Sessions</a>
-          <a href="{{ url_for('profile') }}">Profile</a>
+          <a href="{{ url_for('dashboard') }}">Today</a>
+          <a href="{{ url_for('goals') }}">Goals</a>
+          <a href="{{ url_for('track') }}">Track</a>
+          <a href="{{ url_for('insights') }}">Insights</a>
+          <a href="{{ url_for('support') }}">Support</a>
           <form method="post" action="{{ url_for('logout') }}">
             <button class="text-button" type="submit">Sign out</button>
           </form>

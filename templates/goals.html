@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Goals{% endblock %}
+
+{% block content %}
+  <section class="page-section split-section">
+    <div>
+      <p class="eyebrow">Goals</p>
+      <h1>One behaviour at a time</h1>
+      <p>Your current target is designed to be small enough to repeat and clear enough to review with your therapist.</p>
+    </div>
+
+    <article class="panel goal-builder-preview">
+      <p class="eyebrow">Tiny behaviour rule</p>
+      <h2>If confidence is below 7, make it smaller.</h2>
+      <p>Repeatable behaviour creates better feedback than a large task that only happens once.</p>
+    </article>
+  </section>
+
+  {% if active_goal %}
+    <section class="change-grid">
+      <article class="panel">
+        <p class="eyebrow">What matters</p>
+        <h2>{{ active_goal.values_link or "Values link to be added with your therapist." }}</h2>
+      </article>
+      <article class="panel">
+        <p class="eyebrow">Behaviour target</p>
+        <h2>{{ active_goal.behaviour_target }}</h2>
+      </article>
+      <article class="panel">
+        <p class="eyebrow">Tiny version</p>
+        <h2>{{ active_goal.tiny_behaviour }}</h2>
+      </article>
+      <article class="panel">
+        <p class="eyebrow">Cue</p>
+        <h2>{{ active_goal.cue }}</h2>
+      </article>
+      <article class="panel">
+        <p class="eyebrow">Practice frequency</p>
+        <h2>{{ active_goal.frequency_target }} times per week</h2>
+      </article>
+      <article class="panel">
+        <p class="eyebrow">Confidence</p>
+        <h2>{{ active_goal.confidence_rating }} / 10</h2>
+      </article>
+    </section>
+  {% else %}
+    <article class="panel empty-change-state">
+      <p class="empty-state">No active behaviour goal has been set yet.</p>
+    </article>
+  {% endif %}
+{% endblock %}

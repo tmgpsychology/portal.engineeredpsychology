@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Insights{% endblock %}
+
+{% block content %}
+  <section class="page-section">
+    <p class="eyebrow">Insights</p>
+    <h1>Progress feedback</h1>
+    <p>Use this page to make change visible and concrete before your next session.</p>
+  </section>
+
+  {% if active_goal %}
+    <section class="insight-grid">
+      <article class="panel metric-card">
+        <span>Practice frequency</span>
+        <strong>{{ goal_summary.completed_count }}</strong>
+        <p>{% if goal_summary.practice_delta >= 0 %}+{% endif %}{{ goal_summary.practice_delta }} compared with last week</p>
+      </article>
+      <article class="panel metric-card">
+        <span>Mood average</span>
+        <strong>{{ goal_summary.mood_average or "–" }}</strong>
+        <p>{% if goal_summary.mood_delta is not none %}{% if goal_summary.mood_delta >= 0 %}+{% endif %}{{ goal_summary.mood_delta }} compared with last week{% else %}More data needed{% endif %}</p>
+      </article>
+      <article class="panel metric-card">
+        <span>Most common barrier</span>
+        <strong>{{ goal_summary.common_barrier }}</strong>
+        <p>Use this to adjust the task, cue, or backup version.</p>
+      </article>
+      <article class="panel metric-card">
+        <span>Most useful support</span>
+        <strong>{{ goal_summary.common_help }}</strong>
+        <p>Repeat what helped action happen.</p>
+      </article>
+    </section>
+
+    <article class="panel session-prep-card">
+      <p class="eyebrow">Review with therapist</p>
+      <h2>{{ active_goal.behaviour_target }}</h2>
+      {% if latest_review %}
+        <p>{{ latest_review.recommended_adjustment or "Your therapist has reviewed the current loop." }}</p>
+      {% else %}
+        <p>Bring the practice count, barriers, and any skipped days into session.</p>
+      {% endif %}
+    </article>
+  {% else %}
+    <article class="panel empty-change-state">
+      <p class="empty-state">No active behaviour goal has been set yet.</p>
+    </article>
+  {% endif %}
+{% endblock %}
