@@ -215,8 +215,12 @@ def create_app() -> Flask:
     def create_account():
         invite_token = request.form.get("invite_token", "").strip() or request.args.get("invite", "").strip()
         portal_invite = get_valid_portal_invite(invite_token) if invite_token else None
+        used_invite = get_used_portal_invite(invite_token) if invite_token and portal_invite is None else None
+        if invite_token and used_invite is not None:
+            flash("That portal profile has already been created. Please sign in.", "success")
+            return redirect(url_for("login"))
         if request.method == "GET" and invite_token and portal_invite is None:
-            flash("That portal invite link is invalid or has expired. You can still create an account manually.", "error")
+            flash("That portal invite link is invalid. You can still create an account manually.", "error")
         invite = invite_context(portal_invite, invite_token)
 
         if request.method == "POST":
@@ -1143,14 +1147,20 @@ def normalize_phone_number(phone_number: str) -> str:
 
 def create_portal_invite(full_name: str, email: str, phone: str) -> str:
     token = secrets.token_urlsafe(32)
-    expires_at = (datetime.now(timezone.utc) + timedelta(days=14)).isoformat(timespec="seconds")
     execute(
         """
         insert into portal_invites
             (token_hash, full_name, email, phone, expires_at, created_at, used_at, used_client_id)
         values (?, ?, ?, ?, ?, ?, null, null)
         """,
-        (hash_reset_token(token), full_name, email, phone, expires_at, now_iso()),
+        (
+            hash_reset_token(token),
+            full_name,
+            email,
+            phone,
+            "9999-12-31T23:59:59+00:00",
+            now_iso(),
+        ),
     )
     return token
 
@@ -1158,7 +1168,7 @@ def create_portal_invite(full_name: str, email: str, phone: str) -> str:
 def get_valid_portal_invite(token: str) -> sqlite3.Row | None:
     if not token:
         return None
-    invite = query_one(
+    return query_one(
         """
         select id, full_name, email, phone, expires_at
         from portal_invites
@@ -1166,18 +1176,19 @@ def get_valid_portal_invite(token: str) -> sqlite3.Row | None:
         """,
         (hash_reset_token(token),),
     )
-    if invite is None:
-        return None
 
-    try:
-        expires_at = datetime.fromisoformat(invite["expires_at"])
-    except ValueError:
-        return None
 
-    if expires_at <= datetime.now(timezone.utc):
-        execute("update portal_invites set used_at = ? where id = ?", (now_iso(), invite["id"]))
+def get_used_portal_invite(token: str) -> sqlite3.Row | None:
+    if not token:
         return None
-    return invite
+    return query_one(
+        """
+        select id, used_client_id
+        from portal_invites
+        where token_hash = ? and used_at is not null
+        """,
+        (hash_reset_token(token),),
+    )
 
 
 def mark_portal_invite_used(invite_id: int, client_id: int) -> None:

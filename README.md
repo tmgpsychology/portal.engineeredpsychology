@@ -93,6 +93,9 @@ TWILIO_FROM_NUMBER=replace-with-twilio-number
 
 `TWILIO_MESSAGING_SERVICE_SID` can be used instead of `TWILIO_FROM_NUMBER`.
 
+Invite links do not expire. Once the client has created their profile, opening the same invite link
+sends them to the sign-in page instead of showing an expired-link error.
+
 ## Portal SMS Reminders
 
 Therapists can set a per-client reminder schedule from the client detail page in the admin portal.
