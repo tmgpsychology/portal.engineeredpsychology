@@ -685,6 +685,8 @@ def create_app() -> Flask:
         )
         record_audit(g.client["id"], "daily_checkin_saved", f"Saved check-in: {completed_status}")
         flash("Today saved.", "success")
+        if request.form.get("return_to") == "track":
+            return redirect(url_for("track"))
         return redirect(url_for("dashboard"))
 
     @app.route("/goals")
@@ -697,9 +699,14 @@ def create_app() -> Flask:
     @login_required
     def track():
         active_goal = get_active_change_goal(g.client["id"])
+        todays_checkin = None
+        if active_goal:
+            checkin = get_checkin_for_date(active_goal["id"], datetime.now().date().isoformat())
+            todays_checkin = hydrate_checkin(checkin) if checkin else None
         return render_template(
             "track.html",
             active_goal=active_goal,
+            todays_checkin=todays_checkin,
             week_days=get_current_week_checkins(active_goal["id"]) if active_goal else [],
             goal_summary=get_goal_summary(active_goal["id"]) if active_goal else None,
             barrier_tags=BARRIER_TAGS,

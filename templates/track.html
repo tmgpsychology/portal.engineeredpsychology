@@ -31,23 +31,38 @@
         </div>
       </article>
 
-      <article class="panel">
-        <p class="eyebrow">Barrier tags</p>
-        <div class="chip-row">
-          {% for tag in barrier_tags %}
-            <span class="chip">{{ tag }}</span>
-          {% endfor %}
-        </div>
-      </article>
+      <form class="track-feedback-form" method="post" action="{{ url_for('save_today_checkin') }}">
+        <input type="hidden" name="return_to" value="track">
+        <input type="hidden" name="completed_status" value="{{ todays_checkin.completed_status if todays_checkin else 'not_yet' }}">
+        <input type="hidden" name="mood_rating" value="{{ todays_checkin.mood_rating if todays_checkin and todays_checkin.mood_rating else '' }}">
+        <input type="hidden" name="note" value="{{ todays_checkin.note if todays_checkin else '' }}">
 
-      <article class="panel">
-        <p class="eyebrow">What helped</p>
-        <div class="chip-row">
-          {% for tag in helped_tags %}
-            <span class="chip">{{ tag }}</span>
-          {% endfor %}
-        </div>
-      </article>
+        <article class="panel">
+          <p class="eyebrow">Barrier tags</p>
+          <div class="chip-row feedback-chip-row">
+            {% for tag in barrier_tags %}
+              <label class="feedback-chip">
+                <input type="checkbox" name="barrier_tags" value="{{ tag }}" {% if todays_checkin and tag in todays_checkin.barrier_tags %}checked{% endif %}>
+                <span>{{ tag }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </article>
+
+        <article class="panel">
+          <p class="eyebrow">What helped</p>
+          <div class="chip-row feedback-chip-row">
+            {% for tag in helped_tags %}
+              <label class="feedback-chip">
+                <input type="checkbox" name="helped_tags" value="{{ tag }}" {% if todays_checkin and tag in todays_checkin.helped_tags %}checked{% endif %}>
+                <span>{{ tag }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </article>
+
+        <button class="primary-button feedback-save-button" type="submit">Save feedback</button>
+      </form>
 
       <article class="panel reset-card">
         <p class="eyebrow">Reset action</p>
