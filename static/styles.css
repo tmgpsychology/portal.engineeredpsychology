@@ -958,6 +958,11 @@ body.portal-client .timeline-row > span {
   gap: 16px;
 }
 
+.session-material-form {
+  max-width: 880px;
+  margin-bottom: 18px;
+}
+
 .session-card p {
   margin: 0;
   color: var(--muted);
@@ -978,6 +983,51 @@ body.portal-client .timeline-row > span {
 .session-meta h2 {
   margin: 0;
   font-size: 1.35rem;
+}
+
+.session-meta small {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.session-prose {
+  white-space: pre-wrap;
+  line-height: 1.68;
+  padding: 16px;
+  border-radius: 8px;
+}
+
+.attachment-list {
+  display: grid;
+  gap: 8px;
+}
+
+.attachment-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffdf9;
+  color: var(--accent-strong);
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.attachment-link:hover {
+  background: var(--brand-sky-soft);
+}
+
+.attachment-link span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.attachment-link small {
+  flex: 0 0 auto;
+  color: var(--muted);
 }
 
 .chip-row {
@@ -1111,14 +1161,18 @@ body.portal-client .chip:nth-child(3n) {
 .client-entry-form textarea,
 .client-entry-form input[name="title"],
 .client-entry-form input[name="category"],
-.client-entry-form input[name="notes"] {
+.client-entry-form input[name="notes"],
+.client-entry-form input[name="summary"],
+.client-entry-form textarea[name="summary"] {
   color: var(--client-blue);
 }
 
 .therapist-entry-form textarea,
 .therapist-entry-form input[name="title"],
 .therapist-entry-form input[name="category"],
-.therapist-entry-form input[name="therapist_plan"] {
+.therapist-entry-form input[name="therapist_plan"],
+.therapist-entry-form textarea[name="summary"],
+.therapist-entry-form textarea[name="next_steps"] {
   color: var(--therapist-red);
 }
 

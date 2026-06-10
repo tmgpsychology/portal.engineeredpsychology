@@ -23,30 +23,34 @@
       </div>
     </div>
 
-    <form class="entry-form elevated-form therapist-entry-form" method="post" action="{{ url_for('admin_add_session', client_id=client.id) }}">
+    <form class="entry-form elevated-form therapist-entry-form" method="post" action="{{ url_for('admin_add_session', client_id=client.id) }}" enctype="multipart/form-data">
       <div class="auth-heading">
         <p class="eyebrow">Add to portal</p>
-        <h2>Skill or strategy</h2>
+        <h2>Session material</h2>
       </div>
       <div class="form-row">
         <label>
-          <span>Date discussed</span>
+          <span>Session date</span>
           <input type="date" name="session_date">
         </label>
         <label>
-          <span>Skill or strategy</span>
-          <input name="title" placeholder="e.g. Box breathing" required>
+          <span>Title</span>
+          <input name="title" placeholder="e.g. Session notes and practice plan">
         </label>
       </div>
       <label>
-        <span>Type or category</span>
-        <input name="category" placeholder="e.g. Regulation, grounding, communication">
+        <span>Session material</span>
+        <textarea name="summary" rows="7" placeholder="Add the main ideas, examples, practice instructions, or links to remember."></textarea>
       </label>
       <label>
-        <span>Therapist plan</span>
-        <textarea name="therapist_plan" rows="5" placeholder="When to use it, how to practise it, and what feedback would be useful next session."></textarea>
+        <span>Between-session focus</span>
+        <textarea name="next_steps" rows="3" placeholder="Optional next step or practice focus."></textarea>
       </label>
-      <button class="primary-button" type="submit">Save skill or strategy</button>
+      <label>
+        <span>Upload file</span>
+        <input type="file" name="attachment">
+      </label>
+      <button class="primary-button" type="submit">Save session material</button>
     </form>
   </section>
 
@@ -264,6 +268,52 @@
         <p class="auth-secondary">Next SMS: {{ reminder_schedule.next_send_at }}</p>
       {% endif %}
     </form>
+  </section>
+
+  <section class="page-section">
+    <p class="eyebrow">Client portal</p>
+    <h1>Session material</h1>
+  </section>
+
+  <section class="session-list admin-session-list" aria-label="Session material">
+    {% for session in sessions %}
+      <article class="panel session-card">
+        <div class="session-meta {{ session.author_role }}-text">
+          <span>{{ session.session_date }}</span>
+          <h2>{{ session.title }}</h2>
+          <small>{{ "Therapist" if session.author_role == "therapist" else "Client" }} entry</small>
+        </div>
+        {% if session.summary %}
+          <div class="session-prose {{ session.author_role }}-entry">{{ session.summary }}</div>
+        {% endif %}
+        {% if session.next_steps %}
+          <div class="next-steps">
+            <strong>Between-session focus</strong>
+            <p>{{ session.next_steps }}</p>
+          </div>
+        {% endif %}
+        {% if session.attachments %}
+          <div class="attachment-list">
+            {% for attachment in session.attachments %}
+              <a class="attachment-link" href="{{ url_for('download_session_attachment', attachment_id=attachment.id) }}">
+                <span>{{ attachment.original_filename }}</span>
+                <small>{{ attachment.file_size_label }}</small>
+              </a>
+            {% endfor %}
+          </div>
+        {% endif %}
+        {% if session.client_reflection %}
+          <div class="client-reflection">
+            <span>Client note{% if session.client_reflection_created_at %} · {{ session.client_reflection_created_at[:10] }}{% endif %}</span>
+            <p>{{ session.client_reflection }}</p>
+          </div>
+        {% endif %}
+      </article>
+    {% else %}
+      <article class="panel">
+        <p class="empty-state">No session material added yet.</p>
+      </article>
+    {% endfor %}
   </section>
 
   <section class="page-section">

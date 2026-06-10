@@ -6,18 +6,45 @@
   <section class="page-section">
     <p class="eyebrow">Session timeline</p>
     <h1>Sessions</h1>
-    <p>Review each session card and the things added from that session.</p>
+    <p>Review session material from your therapist and add anything you want to bring back to session.</p>
   </section>
+
+  <form class="entry-form elevated-form client-entry-form session-material-form" method="post" action="{{ url_for('add_session_material') }}" enctype="multipart/form-data">
+    <div class="auth-heading">
+      <p class="eyebrow">Add material</p>
+      <h2>Session note or file</h2>
+    </div>
+    <div class="form-row">
+      <label>
+        <span>Session date</span>
+        <input type="date" name="session_date">
+      </label>
+      <label>
+        <span>Title</span>
+        <input name="title" placeholder="e.g. What I want to discuss">
+      </label>
+    </div>
+    <label>
+      <span>Session material</span>
+      <textarea name="summary" rows="6" placeholder="Add notes, reflections, questions, examples, or anything useful for session."></textarea>
+    </label>
+    <label>
+      <span>Upload file</span>
+      <input type="file" name="attachment">
+    </label>
+    <button class="primary-button" type="submit">Save session material</button>
+  </form>
 
   <section class="session-list" aria-label="Session timeline">
     {% for session in sessions %}
       <article class="panel session-card">
-        <div class="session-meta">
+        <div class="session-meta {{ session.author_role }}-text">
           <span>{{ session.session_date }}</span>
           <h2>{{ session.title }}</h2>
+          <small>{{ "Therapist" if session.author_role == "therapist" else "My" }} entry</small>
         </div>
         {% if session.summary %}
-          <p>{{ session.summary }}</p>
+          <div class="session-prose {{ session.author_role }}-entry">{{ session.summary }}</div>
         {% endif %}
         {% if session.key_skills %}
           <div>
@@ -35,6 +62,16 @@
           <div class="next-steps">
             <strong>Between-session focus</strong>
             <p>{{ session.next_steps }}</p>
+          </div>
+        {% endif %}
+        {% if session.attachments %}
+          <div class="attachment-list">
+            {% for attachment in session.attachments %}
+              <a class="attachment-link" href="{{ url_for('download_session_attachment', attachment_id=attachment.id) }}">
+                <span>{{ attachment.original_filename }}</span>
+                <small>{{ attachment.file_size_label }}</small>
+              </a>
+            {% endfor %}
           </div>
         {% endif %}
         {% if session.reflection_text %}

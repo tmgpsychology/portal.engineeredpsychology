@@ -29,16 +29,19 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_from_directory,
     session,
     url_for,
 )
 from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.utils import secure_filename
 
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 ENV_FILE_CACHE: dict[Path, dict[str, str]] = {}
 DEFAULT_TIMEZONE = "Australia/Sydney"
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 DEFAULT_REMINDER_MESSAGE = (
     "Hi {first_name}, this is a reminder from TMG Psychology to add any notes, "
     "reflections, or practice updates to your Engineered Psychology portal: {link}"
@@ -84,6 +87,11 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-only-change-me")
     app.config["DATABASE_PATH"] = os.environ.get("DATABASE_PATH", str(BASE_DIR / "portal.db"))
+    app.config["SESSION_UPLOAD_FOLDER"] = os.environ.get(
+        "SESSION_UPLOAD_FOLDER",
+        str(BASE_DIR / "session_uploads"),
+    )
+    app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_CONTENT_LENGTH", str(MAX_UPLOAD_BYTES)))
     app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
     app.config["PASSWORD_RESET_EXPIRY_MINUTES"] = int(
         os.environ.get("PASSWORD_RESET_EXPIRY_MINUTES", "60")
@@ -426,35 +434,7 @@ def create_app() -> Flask:
     @admin_required
     def admin_client_detail(client_id: int):
         client = get_client_or_404(client_id)
-        sessions = query_all(
-            """
-            select
-                ts.id,
-                ts.session_date,
-                ts.title,
-                ts.summary,
-                ts.key_skills,
-                ts.next_steps,
-                ts.created_at,
-                latest_session_reflection.reflection_text as client_reflection,
-                latest_session_reflection.created_at as client_reflection_created_at
-            from therapy_sessions ts
-            left join (
-                select sr.session_id, sr.reflection_text, sr.created_at
-                from session_reflections sr
-                join (
-                    select session_id, max(created_at) as latest_created_at
-                    from session_reflections
-                    where client_id = ?
-                    group by session_id
-                ) latest on latest.session_id = sr.session_id and latest.latest_created_at = sr.created_at
-                where sr.client_id = ?
-            ) latest_session_reflection on latest_session_reflection.session_id = ts.id
-            where ts.client_id = ?
-            order by ts.session_date desc, ts.created_at desc
-            """,
-            (client_id, client_id, client_id),
-        )
+        sessions = get_session_materials(client_id)
         skill_reflections = query_all(
             """
             select
@@ -592,24 +572,26 @@ def create_app() -> Flask:
     @admin_required
     def admin_add_session(client_id: int):
         client = get_client_or_404(client_id)
-        discussed_at = request.form.get("session_date", "").strip()
-        title = request.form.get("title", "").strip()
-        category = request.form.get("category", "").strip()
-        therapist_plan = request.form.get("therapist_plan", "").strip()
+        session_date = request.form.get("session_date", "").strip() or datetime.now().date().isoformat()
+        title = request.form.get("title", "").strip() or "Session material"
+        summary = request.form.get("summary", "").strip()
+        next_steps = request.form.get("next_steps", "").strip()
+        upload = request.files.get("attachment")
 
-        if not title:
-            flash("Add a skill or strategy name before saving.", "error")
+        if not summary and not has_upload(upload):
+            flash("Add session material text or upload a file before saving.", "error")
         else:
-            saved_date = discussed_at or datetime.now().date().isoformat()
-            add_skill_for_client(
+            session_id = add_session_for_client(
                 client["id"],
+                session_date,
                 title,
-                category or "Strategy",
-                therapist_plan,
-                saved_date,
+                summary,
+                "",
+                next_steps,
                 "therapist",
             )
-            flash("Skill or strategy saved for the client portal.", "success")
+            save_session_attachment(client["id"], session_id, upload, "therapist")
+            flash("Session material saved for the client portal.", "success")
         return redirect(url_for("admin_client_detail", client_id=client_id))
 
     @app.route("/admin/clients/<int:client_id>/skills/<int:skill_id>/reflections", methods=["POST"])
@@ -801,36 +783,32 @@ def create_app() -> Flask:
     @app.route("/sessions")
     @login_required
     def sessions():
-        session_list = query_all(
-            """
-            select
-                ts.id,
-                ts.session_date,
-                ts.title,
-                ts.summary,
-                ts.key_skills,
-                ts.next_steps,
-                ts.created_at,
-                latest_reflection.reflection_text,
-                latest_reflection.created_at as reflection_created_at
-            from therapy_sessions ts
-            left join (
-                select sr.session_id, sr.reflection_text, sr.created_at
-                from session_reflections sr
-                join (
-                    select session_id, max(created_at) as latest_created_at
-                    from session_reflections
-                    where client_id = ?
-                    group by session_id
-                ) latest on latest.session_id = sr.session_id and latest.latest_created_at = sr.created_at
-                where sr.client_id = ?
-            ) latest_reflection on latest_reflection.session_id = ts.id
-            where ts.client_id = ?
-            order by ts.session_date desc, ts.created_at desc
-            """,
-            (g.client["id"], g.client["id"], g.client["id"]),
-        )
+        session_list = get_session_materials(g.client["id"])
         return render_template("sessions.html", sessions=session_list)
+
+    @app.route("/sessions/material", methods=["POST"])
+    @login_required
+    def add_session_material():
+        session_date = request.form.get("session_date", "").strip() or datetime.now().date().isoformat()
+        title = request.form.get("title", "").strip() or "Session material"
+        summary = request.form.get("summary", "").strip()
+        upload = request.files.get("attachment")
+
+        if not summary and not has_upload(upload):
+            flash("Add session material text or upload a file before saving.", "error")
+        else:
+            session_id = add_session_for_client(
+                g.client["id"],
+                session_date,
+                title,
+                summary,
+                "",
+                "",
+                "client",
+            )
+            save_session_attachment(g.client["id"], session_id, upload, "client")
+            flash("Session material saved.", "success")
+        return redirect(url_for("sessions"))
 
     @app.route("/sessions/<int:session_id>/reflections", methods=["POST"])
     @login_required
@@ -856,6 +834,34 @@ def create_app() -> Flask:
             record_audit(g.client["id"], "session_reflection_added", "Client added session reflection")
             flash("Session reflection saved.", "success")
         return redirect(url_for("sessions"))
+
+    @app.route("/session-attachments/<int:attachment_id>")
+    def download_session_attachment(attachment_id: int):
+        attachment = query_one(
+            """
+            select sa.*, ts.client_id as owner_client_id
+            from session_attachments sa
+            join therapy_sessions ts on ts.id = sa.session_id
+            where sa.id = ?
+            """,
+            (attachment_id,),
+        )
+        if attachment is None:
+            abort(404)
+        if g.admin is None and (g.client is None or int(attachment["owner_client_id"]) != int(g.client["id"])):
+            abort(404)
+
+        upload_root = Path(current_app_config("SESSION_UPLOAD_FOLDER")).resolve()
+        stored_path = Path(str(attachment["stored_path"]))
+        safe_path = (upload_root / stored_path).resolve()
+        if upload_root not in safe_path.parents and safe_path != upload_root:
+            abort(404)
+        return send_from_directory(
+            safe_path.parent,
+            safe_path.name,
+            as_attachment=True,
+            download_name=attachment["original_filename"],
+        )
 
     @app.route("/profile")
     @login_required
@@ -1864,6 +1870,64 @@ def get_client_skills_with_latest_reflection(client_id: int) -> list[dict]:
     return skills
 
 
+def get_session_materials(client_id: int) -> list[dict]:
+    session_rows = query_all(
+        """
+        select
+            ts.id,
+            ts.session_date,
+            ts.title,
+            ts.summary,
+            ts.key_skills,
+            ts.next_steps,
+            ts.author_role,
+            ts.created_at,
+            latest_reflection.reflection_text,
+            latest_reflection.created_at as reflection_created_at,
+            latest_reflection.reflection_text as client_reflection,
+            latest_reflection.created_at as client_reflection_created_at
+        from therapy_sessions ts
+        left join (
+            select sr.session_id, sr.reflection_text, sr.created_at
+            from session_reflections sr
+            join (
+                select session_id, max(created_at) as latest_created_at
+                from session_reflections
+                where client_id = ?
+                group by session_id
+            ) latest on latest.session_id = sr.session_id and latest.latest_created_at = sr.created_at
+            where sr.client_id = ?
+        ) latest_reflection on latest_reflection.session_id = ts.id
+        where ts.client_id = ?
+        order by ts.session_date desc, ts.created_at desc
+        """,
+        (client_id, client_id, client_id),
+    )
+    sessions = [dict(row) for row in session_rows]
+    if not sessions:
+        return []
+
+    placeholders = ",".join("?" for _row in sessions)
+    attachment_rows = query_all(
+        f"""
+        select id, session_id, original_filename, content_type, file_size, uploader_role, created_at
+        from session_attachments
+        where session_id in ({placeholders})
+        order by created_at
+        """,
+        tuple(session["id"] for session in sessions),
+    )
+    attachments_by_session: dict[int, list[dict]] = {}
+    for row in attachment_rows:
+        attachment = dict(row)
+        attachment["file_size_label"] = format_file_size(int(attachment.get("file_size") or 0))
+        attachments_by_session.setdefault(int(row["session_id"]), []).append(attachment)
+
+    for session in sessions:
+        session["attachments"] = attachments_by_session.get(int(session["id"]), [])
+    return sessions
+
+
 def add_session_for_client(
     client_id: int,
     session_date: str,
@@ -1871,24 +1935,79 @@ def add_session_for_client(
     summary: str,
     key_skills: str,
     next_steps: str,
-) -> None:
-    execute(
+    author_role: str = "therapist",
+) -> int:
+    db = get_db()
+    cursor = db.execute(
         """
         insert into therapy_sessions
-            (client_id, session_date, title, summary, key_skills, next_steps, created_at)
-        values (?, ?, ?, ?, ?, ?, ?)
+            (client_id, session_date, title, summary, key_skills, next_steps, author_role, created_at)
+        values (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (client_id, session_date, title, summary, key_skills, next_steps, now_iso()),
+        (client_id, session_date, title, summary, key_skills, next_steps, author_role, now_iso()),
     )
-    for skill in parse_skill_lines(key_skills):
-        add_skill_for_client(
-            client_id,
-            skill,
-            "Session skill",
-            f"Added from session: {title}",
-            session_date,
-        )
+    db.commit()
+    session_id = int(cursor.lastrowid)
+    if author_role == "therapist":
+        for skill in parse_skill_lines(key_skills):
+            add_skill_for_client(
+                client_id,
+                skill,
+                "Session skill",
+                f"Added from session: {title}",
+                session_date,
+            )
     record_audit(client_id, "session_added", f"Added session: {title}")
+    return session_id
+
+
+def has_upload(upload) -> bool:
+    return bool(upload and upload.filename)
+
+
+def save_session_attachment(client_id: int, session_id: int, upload, uploader_role: str) -> None:
+    if not has_upload(upload):
+        return
+
+    original_filename = secure_filename(upload.filename or "")
+    if not original_filename:
+        return
+
+    upload_root = Path(current_app_config("SESSION_UPLOAD_FOLDER")).resolve()
+    relative_dir = Path(str(client_id)) / str(session_id)
+    target_dir = upload_root / relative_dir
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    stored_filename = f"{secrets.token_hex(12)}-{original_filename}"
+    upload.save(target_dir / stored_filename)
+    stored_path = str(relative_dir / stored_filename)
+    file_size = (target_dir / stored_filename).stat().st_size
+    execute(
+        """
+        insert into session_attachments
+            (client_id, session_id, uploader_role, original_filename, stored_path, content_type, file_size, created_at)
+        values (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            client_id,
+            session_id,
+            uploader_role,
+            original_filename,
+            stored_path,
+            upload.mimetype or "application/octet-stream",
+            file_size,
+            now_iso(),
+        ),
+    )
+    record_audit(client_id, "session_attachment_added", f"Uploaded session file: {original_filename}")
+
+
+def format_file_size(size_bytes: int) -> str:
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    if size_bytes < 1024 * 1024:
+        return f"{round(size_bytes / 1024, 1)} KB"
+    return f"{round(size_bytes / (1024 * 1024), 1)} MB"
 
 
 def init_db(app: Flask) -> None:
@@ -1933,6 +2052,19 @@ def init_db(app: Flask) -> None:
                 summary text,
                 key_skills text,
                 next_steps text,
+                author_role text not null default 'therapist',
+                created_at text not null
+            );
+
+            create table if not exists session_attachments (
+                id integer primary key autoincrement,
+                client_id integer not null references clients(id),
+                session_id integer not null references therapy_sessions(id),
+                uploader_role text not null default 'therapist',
+                original_filename text not null,
+                stored_path text not null,
+                content_type text,
+                file_size integer not null default 0,
                 created_at text not null
             );
 
@@ -2050,6 +2182,8 @@ def init_db(app: Flask) -> None:
                 on portal_sms_reminder_schedules(enabled, next_send_at);
             create index if not exists idx_session_reflections_session
                 on session_reflections(session_id);
+            create index if not exists idx_session_attachments_session
+                on session_attachments(session_id);
             create index if not exists idx_client_skill_reflections_skill
                 on client_skill_reflections(skill_id);
             create index if not exists idx_change_goals_client_status
@@ -2060,6 +2194,7 @@ def init_db(app: Flask) -> None:
                 on therapist_reviews(client_id, created_at);
             """
         )
+        ensure_column_exists(db, "therapy_sessions", "author_role", "text not null default 'therapist'")
         ensure_column_exists(db, "client_skills", "author_role", "text not null default 'therapist'")
         ensure_column_exists(db, "client_skill_reflections", "author_role", "text not null default 'client'")
         db.commit()
