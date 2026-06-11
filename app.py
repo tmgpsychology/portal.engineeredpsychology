@@ -103,11 +103,17 @@ def create_app() -> Flask:
         admin_id = session.get("admin_id")
         g.client = None
         g.admin = None
+        g.therapist = None
         if client_id is not None:
             g.client = query_one(
-                "select id, email, full_name, preferred_name, phone from clients where id = ?",
+                "select id, email, full_name, preferred_name, phone, primary_admin_id from clients where id = ?",
                 (client_id,),
             )
+            if g.client and g.client["primary_admin_id"]:
+                g.therapist = query_one(
+                    "select id, full_name, email from admins where id = ?",
+                    (g.client["primary_admin_id"],),
+                )
         if admin_id is not None:
             g.admin = query_one(
                 "select id, email, full_name from admins where id = ?",
@@ -245,12 +251,18 @@ def create_app() -> Flask:
             elif len(password) < 8:
                 flash("Use a password with at least 8 characters.", "error")
             else:
+                primary_admin_id = None
+                if portal_invite is not None:
+                    primary_admin_id = portal_invite["invited_by_admin_id"] or get_single_admin_id()
+                else:
+                    primary_admin_id = get_single_admin_id()
+
                 try:
                     execute(
                         """
                         insert into clients
-                            (email, password_hash, full_name, preferred_name, phone, created_at)
-                        values (?, ?, ?, ?, ?, ?)
+                            (email, password_hash, full_name, preferred_name, phone, primary_admin_id, created_at)
+                        values (?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             email,
@@ -258,6 +270,7 @@ def create_app() -> Flask:
                             full_name,
                             first_name(full_name),
                             phone,
+                            primary_admin_id,
                             now_iso(),
                         ),
                     )
@@ -391,9 +404,11 @@ def create_app() -> Flask:
             order by c.full_name
             """
         )
+        pending_invites = get_pending_portal_invites(g.admin["id"])
         return render_template(
             "admin_clients.html",
             clients=clients,
+            pending_invites=pending_invites,
             portal_invites_configured=twilio_sms_configured(),
         )
 
@@ -412,9 +427,9 @@ def create_app() -> Flask:
             flash("Twilio is not configured for this portal yet.", "error")
             return redirect(url_for("admin_clients"))
 
-        invite_token = create_portal_invite(full_name, email, normalized_phone)
+        invite_token = create_portal_invite(full_name, email, normalized_phone, g.admin["id"])
         invite_url = build_create_account_url(invite_token)
-        message = build_portal_invite_sms(full_name, invite_url)
+        message = build_portal_invite_sms(full_name, invite_url, g.admin["full_name"])
 
         try:
             _from_number, message_sid = send_twilio_sms(normalized_phone, message)
@@ -937,6 +952,16 @@ def admin_account_count() -> int:
     return int(row["admin_count"] if row is not None else 0)
 
 
+def get_single_admin() -> sqlite3.Row | None:
+    admins = query_all("select id, full_name, email from admins order by id limit 2")
+    return admins[0] if len(admins) == 1 else None
+
+
+def get_single_admin_id() -> int | None:
+    admin = get_single_admin()
+    return int(admin["id"]) if admin is not None else None
+
+
 def get_client_or_404(client_id: int) -> sqlite3.Row:
     client = query_one(
         "select id, email, full_name, preferred_name, phone, created_at from clients where id = ?",
@@ -1151,19 +1176,20 @@ def normalize_phone_number(phone_number: str) -> str:
     return digits
 
 
-def create_portal_invite(full_name: str, email: str, phone: str) -> str:
+def create_portal_invite(full_name: str, email: str, phone: str, invited_by_admin_id: int | None) -> str:
     token = secrets.token_urlsafe(32)
     execute(
         """
         insert into portal_invites
-            (token_hash, full_name, email, phone, expires_at, created_at, used_at, used_client_id)
-        values (?, ?, ?, ?, ?, ?, null, null)
+            (token_hash, full_name, email, phone, invited_by_admin_id, expires_at, created_at, used_at, used_client_id)
+        values (?, ?, ?, ?, ?, ?, ?, null, null)
         """,
         (
             hash_reset_token(token),
             full_name,
             email,
             phone,
+            invited_by_admin_id,
             "9999-12-31T23:59:59+00:00",
             now_iso(),
         ),
@@ -1176,8 +1202,10 @@ def get_valid_portal_invite(token: str) -> sqlite3.Row | None:
         return None
     return query_one(
         """
-        select id, full_name, email, phone, expires_at
-        from portal_invites
+        select pi.id, pi.full_name, pi.email, pi.phone, pi.expires_at, pi.invited_by_admin_id,
+               a.full_name as therapist_name
+        from portal_invites pi
+        left join admins a on a.id = pi.invited_by_admin_id
         where token_hash = ? and used_at is null
         """,
         (hash_reset_token(token),),
@@ -1198,20 +1226,33 @@ def get_used_portal_invite(token: str) -> sqlite3.Row | None:
 
 
 def mark_portal_invite_used(invite_id: int, client_id: int) -> None:
+    invite = query_one("select invited_by_admin_id from portal_invites where id = ?", (invite_id,))
     execute(
         "update portal_invites set used_at = ?, used_client_id = ? where id = ?",
         (now_iso(), client_id, invite_id),
     )
+    admin_id = invite["invited_by_admin_id"] if invite is not None else None
+    admin_id = admin_id or get_single_admin_id()
+    if admin_id:
+        execute(
+            "update clients set primary_admin_id = ? where id = ? and primary_admin_id is null",
+            (admin_id, client_id),
+        )
 
 
 def invite_context(invite: sqlite3.Row | None, token: str) -> dict[str, str]:
     if invite is None:
-        return {"full_name": "", "email": "", "phone": "", "token": ""}
+        return {"full_name": "", "email": "", "phone": "", "token": "", "therapist_name": ""}
+    therapist_name = str(invite["therapist_name"] or "")
+    if not therapist_name:
+        therapist = get_single_admin()
+        therapist_name = str(therapist["full_name"] or "") if therapist is not None else ""
     return {
         "full_name": str(invite["full_name"] or ""),
         "email": str(invite["email"] or ""),
         "phone": str(invite["phone"] or ""),
         "token": token,
+        "therapist_name": therapist_name,
     }
 
 
@@ -1224,11 +1265,25 @@ def build_create_account_url(invite_token: str) -> str:
     return url_for("create_account", _external=True, **params)
 
 
-def build_portal_invite_sms(full_name: str, invite_url: str) -> str:
+def build_portal_invite_sms(full_name: str, invite_url: str, therapist_name: str = "") -> str:
     greeting_name = first_name(full_name) or "there"
+    sender_name = therapist_name or "your therapist"
     return (
-        f"Hi {greeting_name}, Travis from TMG Psychology has set up your Engineered Psychology "
+        f"Hi {greeting_name}, {sender_name} from TMG Psychology has set up your Engineered Psychology "
         f"client portal. Create your profile here: {invite_url}"
+    )
+
+
+def get_pending_portal_invites(admin_id: int) -> list[sqlite3.Row]:
+    return query_all(
+        """
+        select id, full_name, email, phone, created_at
+        from portal_invites
+        where used_at is null
+          and (invited_by_admin_id = ? or invited_by_admin_id is null)
+        order by created_at desc
+        """,
+        (admin_id,),
     )
 
 
@@ -2022,6 +2077,7 @@ def init_db(app: Flask) -> None:
                 full_name text not null,
                 preferred_name text,
                 phone text,
+                primary_admin_id integer references admins(id),
                 created_at text not null
             );
 
@@ -2109,6 +2165,7 @@ def init_db(app: Flask) -> None:
                 full_name text,
                 email text,
                 phone text,
+                invited_by_admin_id integer references admins(id),
                 expires_at text not null,
                 created_at text not null,
                 used_at text,
@@ -2194,6 +2251,8 @@ def init_db(app: Flask) -> None:
                 on therapist_reviews(client_id, created_at);
             """
         )
+        ensure_column_exists(db, "clients", "primary_admin_id", "integer references admins(id)")
+        ensure_column_exists(db, "portal_invites", "invited_by_admin_id", "integer references admins(id)")
         ensure_column_exists(db, "therapy_sessions", "author_role", "text not null default 'therapist'")
         ensure_column_exists(db, "client_skills", "author_role", "text not null default 'therapist'")
         ensure_column_exists(db, "client_skill_reflections", "author_role", "text not null default 'client'")
@@ -2219,8 +2278,8 @@ def seed_demo_data() -> None:
     password_hash = generate_password_hash("change-me-now")
     execute(
         """
-        insert into clients (email, password_hash, full_name, preferred_name, phone, created_at)
-        values (?, ?, ?, ?, ?, ?)
+        insert into clients (email, password_hash, full_name, preferred_name, phone, primary_admin_id, created_at)
+        values (?, ?, ?, ?, ?, null, ?)
         """,
         (
             "client@example.com",

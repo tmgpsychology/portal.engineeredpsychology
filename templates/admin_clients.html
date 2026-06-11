@@ -40,6 +40,31 @@
     </form>
   </section>
 
+  <section class="page-section">
+    <p class="eyebrow">Pending setup</p>
+    <h1>Invited clients</h1>
+    <p>These people have been sent a profile setup link but have not created their portal profile yet.</p>
+  </section>
+
+  <section class="admin-list pending-invite-list" aria-label="Pending portal invites">
+    {% for invite in pending_invites %}
+      <article class="panel client-row pending-invite-row">
+        <div>
+          <strong>{{ invite.full_name or "Name not supplied" }}</strong>
+          <small>{{ invite.phone }}{% if invite.email %} · {{ invite.email }}{% endif %}</small>
+        </div>
+        <div class="client-row-stats">
+          <span>Invited {{ invite.created_at[:10] }}</span>
+          <span class="flag-chip">Awaiting profile</span>
+        </div>
+      </article>
+    {% else %}
+      <article class="panel">
+        <p class="empty-state">No pending portal invites.</p>
+      </article>
+    {% endfor %}
+  </section>
+
   <section class="admin-list" aria-label="Client list">
     {% for client in clients %}
       <a class="panel client-row" href="{{ url_for('admin_client_detail', client_id=client.id) }}">

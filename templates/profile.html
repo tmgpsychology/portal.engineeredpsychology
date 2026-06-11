@@ -19,7 +19,10 @@
         <span>Phone</span>
         <strong>{{ g.client.phone or "Not set" }}</strong>
       </div>
+      <div>
+        <span>Therapist</span>
+        <strong>{{ g.therapist.full_name if g.therapist else "Not linked yet" }}</strong>
+      </div>
     </div>
   </section>
 {% endblock %}
-

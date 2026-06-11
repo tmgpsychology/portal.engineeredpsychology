@@ -19,6 +19,12 @@
           <p class="eyebrow">New account</p>
           <h2>Create account</h2>
         </div>
+        {% if invite.therapist_name %}
+          <div class="entry-note therapist-entry">
+            <strong>Your therapist</strong>
+            <p>{{ invite.therapist_name }}</p>
+          </div>
+        {% endif %}
         <label>
           <span>Full name</span>
           <input name="full_name" value="{{ invite.full_name or '' }}" autocomplete="name" required>
