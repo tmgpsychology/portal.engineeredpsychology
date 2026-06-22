@@ -120,3 +120,12 @@ Recommended EC2 layout:
 Recommended local port: `3020`.
 
 Use the files in `deploy/` as the starting point for systemd and nginx.
+
+The nginx template expects a Let's Encrypt certificate for
+`portal.engineeredpsychology.com`:
+
+```bash
+sudo certbot certonly --nginx --cert-name portal.engineeredpsychology.com -d portal.engineeredpsychology.com
+sudo systemctl reload nginx
+curl -Iv https://portal.engineeredpsychology.com/healthz
+```
